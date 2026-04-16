@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+.env
+
+# IDE / éditeurs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs et données temporaires
+*.log
+*.tmp

@@ -1,0 +1,462 @@
+{
+    "nom_projet": "Nouveau Projet MAGsim",
+    "machines": {
+        "ct1": {
+            "type": "Centrifugeuse",
+            "coords": {
+                "x": 825,
+                "y": 675
+            },
+            "capacite": 4,
+            "protocoles": {
+                "centi1": {
+                    "temps": 30,
+                    "type_compatible": "Centrifugeuse"
+                }
+            },
+            "seuil": 1,
+            "file_max": 10,
+            "tmep": 360,
+            "tmr": 30,
+            "delai_max_avant_degrad": 240
+        },
+        "au1": {
+            "type": "Automate",
+            "coords": {
+                "x": 475,
+                "y": 125
+            },
+            "capacite": 10,
+            "protocoles": {
+                "proto1": {
+                    "temps": 120,
+                    "type_compatible": "Automate"
+                }
+            },
+            "seuil": 1,
+            "file_max": 20,
+            "tmep": 480,
+            "tmr": 60,
+            "delai_max_avant_degrad": 360
+        },
+        "IN": {
+            "type": "ENTREE",
+            "coords": {
+                "x": 1175,
+                "y": 375
+            },
+            "capacite": 4,
+            "protocoles": {},
+            "frequence": 5.0,
+            "gamma_k": 2.0,
+            "heure_debut": 7.0,
+            "pct_mauvais_prelevements": 0.02,
+            "profil_horaire": [
+                [
+                    0.0,
+                    0.1
+                ],
+                [
+                    6.0,
+                    0.3
+                ],
+                [
+                    7.0,
+                    0.8
+                ],
+                [
+                    8.0,
+                    1.5
+                ],
+                [
+                    9.0,
+                    1.8
+                ],
+                [
+                    10.0,
+                    1.4
+                ],
+                [
+                    11.0,
+                    5.0
+                ],
+                [
+                    12.0,
+                    1.2
+                ],
+                [
+                    13.0,
+                    1.5
+                ],
+                [
+                    14.0,
+                    1.2
+                ],
+                [
+                    15.0,
+                    1.0
+                ],
+                [
+                    16.0,
+                    0.7
+                ],
+                [
+                    17.0,
+                    0.4
+                ],
+                [
+                    18.0,
+                    0.2
+                ],
+                [
+                    20.0,
+                    0.1
+                ],
+                [
+                    24.0,
+                    0.1
+                ]
+            ]
+        },
+        "OUT": {
+            "type": "SORTIE",
+            "coords": {
+                "x": 125,
+                "y": 675
+            },
+            "capacite": 4,
+            "protocoles": {}
+        },
+        "pa1": {
+            "type": "Paillasse",
+            "tech_requis_poste": true,
+            "coords": {
+                "x": 675,
+                "y": 425
+            },
+            "capacite": 5,
+            "protocoles": {
+                "culot 1": {
+                    "temps": 100,
+                    "type_compatible": "Paillasse"
+                },
+                "surnageant1": {
+                    "temps": 60,
+                    "type_compatible": "Paillasse"
+                }
+            },
+            "seuil": 1,
+            "file_max": 25,
+            "tmep": 720,
+            "tmr": 20,
+            "delai_max_avant_degrad": 300
+        },
+        "b1": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 1075,
+                "y": 225
+            },
+            "capacite": 4,
+            "protocoles": {},
+            "pct_erreur_tech": 0.02,
+            "experience": 3,
+            "age": 18,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.01,
+            "capacite_max_tubes": 10
+        },
+        "b2": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 925,
+                "y": 125
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "pct_erreur_tech": 0.01,
+            "experience": 4,
+            "age": 45,
+            "seuil_charge_fatigue": 0.75,
+            "taux_montee_fatigue": 0.008,
+            "capacite_max_tubes": 12
+        },
+        "pa2": {
+            "type": "Paillasse",
+            "tech_requis_poste": true,
+            "coords": {
+                "x": 475,
+                "y": 325
+            },
+            "capacite": 5,
+            "file_max": 20,
+            "seuil": 1,
+            "protocoles": {
+                "culot 1": {
+                    "temps": 100,
+                    "type_compatible": "Paillasse"
+                },
+                "surnageant1": {
+                    "temps": 60,
+                    "type_compatible": "Paillasse"
+                }
+            },
+            "tmep": 720,
+            "tmr": 20,
+            "delai_max_avant_degrad": 300
+        },
+        "ct2": {
+            "type": "Centrifugeuse",
+            "coords": {
+                "x": 675,
+                "y": 675
+            },
+            "capacite": 10,
+            "file_max": 30,
+            "seuil": 1,
+            "protocoles": {
+                "centi1": {
+                    "temps": 30,
+                    "type_compatible": "Centrifugeuse"
+                }
+            },
+            "tmep": 360,
+            "tmr": 30,
+            "delai_max_avant_degrad": 240
+        }
+    },
+    "sol": {
+        "0_0": "WALL",
+        "1_0": "WALL",
+        "2_0": "WALL",
+        "3_0": "WALL",
+        "4_0": "WALL",
+        "5_0": "WALL",
+        "6_0": "WALL",
+        "7_0": "WALL",
+        "8_0": "WALL",
+        "9_0": "WALL",
+        "10_0": "WALL",
+        "11_0": "WALL",
+        "12_0": "WALL",
+        "13_0": "WALL",
+        "14_0": "WALL",
+        "15_0": "WALL",
+        "16_0": "WALL",
+        "17_0": "WALL",
+        "18_0": "WALL",
+        "19_0": "WALL",
+        "20_0": "WALL",
+        "21_0": "WALL",
+        "22_0": "WALL",
+        "23_0": "WALL",
+        "23_1": "WALL",
+        "23_2": "WALL",
+        "23_3": "WALL",
+        "23_4": "WALL",
+        "23_5": "WALL",
+        "23_9": "WALL",
+        "23_10": "WALL",
+        "23_11": "WALL",
+        "23_12": "WALL",
+        "23_13": "WALL",
+        "23_14": "WALL",
+        "23_15": "WALL",
+        "22_15": "WALL",
+        "21_15": "WALL",
+        "20_15": "WALL",
+        "19_15": "WALL",
+        "18_15": "WALL",
+        "17_15": "WALL",
+        "16_15": "WALL",
+        "15_15": "WALL",
+        "14_15": "WALL",
+        "13_15": "WALL",
+        "12_15": "WALL",
+        "11_15": "WALL",
+        "10_15": "WALL",
+        "9_15": "WALL",
+        "8_15": "WALL",
+        "7_15": "WALL",
+        "6_15": "WALL",
+        "5_15": "WALL",
+        "4_15": "WALL",
+        "3_15": "WALL",
+        "2_15": "WALL",
+        "1_15": "WALL",
+        "0_15": "WALL",
+        "0_14": "WALL",
+        "0_13": "WALL",
+        "0_12": "WALL",
+        "0_11": "WALL",
+        "0_10": "WALL",
+        "0_9": "WALL",
+        "0_8": "WALL",
+        "0_7": "WALL",
+        "0_6": "WALL",
+        "0_5": "WALL",
+        "0_4": "WALL",
+        "0_3": "WALL",
+        "0_2": "WALL",
+        "0_1": "WALL",
+        "21_5": "COUNTER",
+        "22_5": "COUNTER",
+        "22_4": "COUNTER",
+        "21_3": "COUNTER",
+        "22_3": "COUNTER",
+        "22_2": "COUNTER",
+        "21_2": "COUNTER",
+        "22_1": "COUNTER",
+        "21_1": "COUNTER",
+        "20_1": "COUNTER",
+        "20_2": "COUNTER",
+        "19_2": "COUNTER",
+        "17_2": "COUNTER",
+        "16_2": "COUNTER",
+        "15_2": "COUNTER",
+        "14_2": "COUNTER",
+        "13_2": "COUNTER",
+        "12_2": "COUNTER",
+        "11_2": "COUNTER",
+        "10_2": "COUNTER",
+        "9_2": "COUNTER",
+        "8_2": "COUNTER",
+        "7_2": "COUNTER",
+        "6_2": "COUNTER",
+        "5_2": "COUNTER",
+        "4_2": "COUNTER",
+        "3_2": "COUNTER",
+        "2_2": "COUNTER",
+        "1_2": "COUNTER",
+        "1_1": "COUNTER",
+        "2_1": "COUNTER",
+        "3_1": "COUNTER",
+        "4_1": "COUNTER",
+        "5_1": "COUNTER",
+        "6_1": "COUNTER",
+        "7_1": "COUNTER",
+        "8_1": "COUNTER",
+        "9_1": "COUNTER",
+        "10_1": "COUNTER",
+        "11_1": "COUNTER",
+        "12_1": "COUNTER",
+        "13_1": "COUNTER",
+        "14_1": "COUNTER",
+        "15_1": "COUNTER",
+        "16_1": "COUNTER",
+        "17_1": "COUNTER",
+        "18_1": "COUNTER",
+        "19_1": "COUNTER",
+        "21_10": "COUNTER",
+        "22_10": "COUNTER",
+        "22_11": "COUNTER",
+        "22_12": "COUNTER",
+        "22_13": "COUNTER",
+        "22_14": "COUNTER",
+        "21_14": "COUNTER",
+        "21_13": "COUNTER",
+        "21_12": "COUNTER",
+        "21_11": "COUNTER",
+        "20_13": "COUNTER",
+        "19_13": "COUNTER",
+        "18_13": "COUNTER",
+        "17_13": "COUNTER",
+        "16_13": "COUNTER",
+        "15_13": "COUNTER",
+        "14_13": "COUNTER",
+        "13_13": "COUNTER",
+        "12_13": "COUNTER",
+        "11_13": "COUNTER",
+        "10_13": "COUNTER",
+        "9_13": "COUNTER",
+        "8_13": "COUNTER",
+        "7_13": "COUNTER",
+        "6_13": "COUNTER",
+        "5_13": "COUNTER",
+        "4_13": "COUNTER",
+        "3_13": "COUNTER",
+        "1_13": "COUNTER",
+        "1_14": "COUNTER",
+        "2_14": "COUNTER",
+        "3_14": "COUNTER",
+        "4_14": "COUNTER",
+        "5_14": "COUNTER",
+        "6_14": "COUNTER",
+        "7_14": "COUNTER",
+        "8_14": "COUNTER",
+        "9_14": "COUNTER",
+        "10_14": "COUNTER",
+        "11_14": "COUNTER",
+        "12_14": "COUNTER",
+        "13_14": "COUNTER",
+        "14_14": "COUNTER",
+        "15_14": "COUNTER",
+        "16_14": "COUNTER",
+        "17_14": "COUNTER",
+        "18_14": "COUNTER",
+        "19_14": "COUNTER",
+        "20_14": "COUNTER",
+        "6_6": "COUNTER",
+        "6_7": "COUNTER",
+        "6_8": "COUNTER",
+        "7_8": "COUNTER",
+        "8_8": "COUNTER",
+        "9_8": "COUNTER",
+        "10_8": "COUNTER",
+        "11_8": "COUNTER",
+        "12_8": "COUNTER",
+        "13_8": "COUNTER",
+        "14_8": "COUNTER",
+        "14_7": "COUNTER",
+        "14_6": "COUNTER",
+        "13_6": "COUNTER",
+        "12_6": "COUNTER",
+        "11_6": "COUNTER",
+        "10_6": "COUNTER",
+        "9_6": "COUNTER",
+        "7_6": "COUNTER",
+        "7_7": "COUNTER",
+        "8_7": "COUNTER",
+        "9_7": "COUNTER",
+        "10_7": "COUNTER",
+        "11_7": "COUNTER",
+        "12_7": "COUNTER",
+        "13_7": "COUNTER",
+        "8_6": "COUNTER",
+        "21_4": "COUNTER",
+        "18_2": "COUNTER"
+    },
+    "catalog_protocoles": {
+        "centi1": {
+            "temps": 30,
+            "type_compatible": "Centrifugeuse"
+        },
+        "culot 1": {
+            "temps": 100,
+            "type_compatible": "Paillasse"
+        },
+        "surnageant1": {
+            "temps": 60,
+            "type_compatible": "Paillasse"
+        },
+        "proto1": {
+            "temps": 120,
+            "type_compatible": "Automate"
+        }
+    },
+    "types_tubes": {
+        "tube1": {
+            "couleur": "#8080ff",
+            "workflow": [
+                "centi1",
+                "culot 1",
+                "proto1"
+            ],
+            "pct_urgent": 0.05,
+            "taille_lot_min": 3,
+            "taille_lot_max": 8
+        }
+    }
+}
