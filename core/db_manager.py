@@ -68,6 +68,16 @@ class DBManager:
                     description   TEXT NOT NULL DEFAULT ''
                 )
             """)
+            # Table de lien : un protocole utilise N consommables avec une quantité
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS protocole_consommables (
+                    protocole_id      TEXT NOT NULL,
+                    consommable_id    TEXT NOT NULL,
+                    quantite          REAL NOT NULL DEFAULT 0.0,
+                    PRIMARY KEY (protocole_id, consommable_id),
+                    FOREIGN KEY (consommable_id) REFERENCES consommables(id)
+                )
+            """)
 
     # ------------------------------------------------------------------
     # CRUD — Consommables
@@ -91,6 +101,15 @@ class DBManager:
         """Supprime un consommable par son identifiant."""
         with self._connexion() as conn:
             conn.execute("DELETE FROM consommables WHERE id = ?", (id,))
+
+    def get_protocoles_utilisant(self, consommable_id: str) -> list[str]:
+        """Retourne la liste des IDs de protocoles qui utilisent ce consommable."""
+        with self._connexion() as conn:
+            rows = conn.execute(
+                "SELECT protocole_id FROM protocole_consommables WHERE consommable_id = ?",
+                (consommable_id,)
+            ).fetchall()
+        return [r["protocole_id"] for r in rows]
 
     def get_consommable(self, id: str):
         """Retourne un consommable spécifique ou None."""

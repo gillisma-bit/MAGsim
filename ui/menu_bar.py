@@ -7,6 +7,8 @@ L'intégration dans la fenêtre principale se fait via MenuBar(app).
 import tkinter as tk
 from tkinter import messagebox
 
+from ui.dialog_consommables import DialogConsommables
+
 
 class MenuBar:
     """Crée et attache la barre de menus à la fenêtre principale.
@@ -123,11 +125,13 @@ class MenuBar:
             tab_live.arreter_simulation()
 
     def _ouvrir_config_consommables(self):
-        """Ouvre la fenêtre de gestion des consommables (à implémenter)."""
-        # Placeholder — sera remplacé par la vraie fenêtre lors du
-        # développement de l'interface consommables
-        messagebox.showinfo("Consommables",
-                            "Interface consommables en cours de développement.")
+        """Ouvre la fenêtre de gestion des consommables."""
+        db  = getattr(self.app, "db_manager", None)
+        cfg = getattr(self.app, "config_manager", None)
+        if db is None:
+            messagebox.showerror("Erreur", "Base de données non initialisée.", parent=self.root)
+            return
+        DialogConsommables(self.root, db, cfg)
 
     def _a_propos(self):
         messagebox.showinfo(

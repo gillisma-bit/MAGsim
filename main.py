@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from core.config_manager import ConfigManager
+from core.db_manager import DBManager
 from ui.menu_bar import MenuBar
 from ui.tab_config import TabConfig
 from ui.tab_live import TabLive
@@ -18,6 +19,9 @@ class MAGsimApp:
 
         # 1. Initialisation de la mémoire (JSON)
         self.config_manager = ConfigManager()
+
+        # 1b. Base de données SQLite (données métier)
+        self.db_manager = DBManager()
 
         # 2. Barre de menus
         self.menu_bar = MenuBar(self)
