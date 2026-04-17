@@ -51,7 +51,8 @@ class MAGsimApp:
         self.tab_config     = TabConfig(self.tab_config_frame, self.config_manager)
         self.tab_live       = TabLive(self.tab_live_frame, self.config_manager)
         self.tab_stats      = TabStats(self.tab_stats_frame, self.config_manager, tab_live_ref=self.tab_live)
-        self.tab_diagnostic = TabDiagnostic(self.tab_diagnostic_frame, self.config_manager)
+        self.tab_diagnostic = TabDiagnostic(self.tab_diagnostic_frame, self.config_manager,
+                                            tab_live_ref=self.tab_live)
 
         # Rafraîchir le diagnostic quand l'onglet devient actif
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
