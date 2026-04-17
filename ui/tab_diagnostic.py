@@ -50,14 +50,19 @@ class TabDiagnostic:
         ttk.Button(top, text="↻  Actualiser", command=self.lancer_diagnostic,
                    padding=(10, 4)).pack(side=tk.RIGHT)
 
-        # ── Zone principale : 2 colonnes ─────────────────────────────────────
-        paned = tk.PanedWindow(self.parent, orient=tk.HORIZONTAL,
-                               sashrelief="raised", sashwidth=5,
-                               bg="#2a2a3e")
-        paned.pack(fill="both", expand=True, padx=6, pady=(0, 2))
+        # ── Zone principale : 2 colonnes (grid, sans PanedWindow) ────────────
+        cols = tk.Frame(self.parent, bg="#1e1e2e")
+        cols.pack(fill="both", expand=True, padx=6, pady=(0, 2))
+        cols.columnconfigure(0, weight=3)   # rapport : ~60 %
+        cols.columnconfigure(1, weight=0)   # séparateur
+        cols.columnconfigure(2, weight=2)   # observations : ~40 %
+        cols.rowconfigure(0, weight=1)
 
         # ── Colonne gauche : rapport technique ───────────────────────────────
-        frame_rapport = ttk.Frame(paned, padding=(6, 4))
+        frame_rapport = tk.Frame(cols, bg="#1e1e2e")
+        frame_rapport.grid(row=0, column=0, sticky="nsew")
+        frame_rapport.rowconfigure(0, weight=1)
+        frame_rapport.columnconfigure(0, weight=1)
 
         self.text = tk.Text(
             frame_rapport,
@@ -70,8 +75,8 @@ class TabDiagnostic:
         )
         sb_l = ttk.Scrollbar(frame_rapport, orient="vertical", command=self.text.yview)
         self.text.configure(yscrollcommand=sb_l.set)
-        sb_l.pack(side=tk.RIGHT, fill="y")
-        self.text.pack(fill="both", expand=True)
+        sb_l.grid(row=0, column=1, sticky="ns")
+        self.text.grid(row=0, column=0, sticky="nsew")
 
         self.text.tag_config("ok",      foreground="#a6e3a1")
         self.text.tag_config("info",    foreground="#89b4fa")
@@ -80,10 +85,14 @@ class TabDiagnostic:
         self.text.tag_config("section", foreground="#cba6f7", font=("Consolas", 11, "bold"))
         self.text.tag_config("dim",     foreground="#585b70")
 
-        paned.add(frame_rapport, minsize=340)
+        # Séparateur vertical
+        tk.Frame(cols, bg="#313145", width=2).grid(row=0, column=1, sticky="ns", padx=2)
 
         # ── Colonne droite : observations synthétiques ───────────────────────
-        frame_obs = tk.Frame(paned, bg="#13131f", padx=0, pady=0)
+        frame_obs = tk.Frame(cols, bg="#13131f")
+        frame_obs.grid(row=0, column=2, sticky="nsew")
+        frame_obs.rowconfigure(1, weight=1)
+        frame_obs.columnconfigure(0, weight=1)
 
         obs_title = tk.Label(
             frame_obs,
@@ -92,22 +101,24 @@ class TabDiagnostic:
             bg="#13131f", fg="#cba6f7",
             anchor="w", padx=14, pady=10
         )
-        obs_title.pack(fill="x")
+        obs_title.grid(row=0, column=0, sticky="ew")
 
-        sep = tk.Frame(frame_obs, bg="#313145", height=1)
-        sep.pack(fill="x")
+        tk.Frame(frame_obs, bg="#313145", height=1).grid(row=0, column=0,
+                                                          sticky="ews", pady=(40, 0))
 
         # Scrollable canvas pour les cartes d'observations
         obs_scroll_outer = tk.Frame(frame_obs, bg="#13131f")
-        obs_scroll_outer.pack(fill="both", expand=True)
+        obs_scroll_outer.grid(row=1, column=0, sticky="nsew")
+        obs_scroll_outer.rowconfigure(0, weight=1)
+        obs_scroll_outer.columnconfigure(0, weight=1)
 
         self._obs_canvas = tk.Canvas(obs_scroll_outer, bg="#13131f",
                                      highlightthickness=0)
         sb_r = ttk.Scrollbar(obs_scroll_outer, orient="vertical",
                               command=self._obs_canvas.yview)
         self._obs_canvas.configure(yscrollcommand=sb_r.set)
-        sb_r.pack(side=tk.RIGHT, fill="y")
-        self._obs_canvas.pack(side=tk.LEFT, fill="both", expand=True)
+        sb_r.grid(row=0, column=1, sticky="ns")
+        self._obs_canvas.grid(row=0, column=0, sticky="nsew")
 
         self._obs_inner = tk.Frame(self._obs_canvas, bg="#13131f")
         self._obs_window = self._obs_canvas.create_window(
@@ -119,8 +130,6 @@ class TabDiagnostic:
         # Scroll molette
         self._obs_canvas.bind("<MouseWheel>",
             lambda e: self._obs_canvas.yview_scroll(-1 * (e.delta // 120), "units"))
-
-        paned.add(frame_obs, minsize=280)
 
         # ── Barre de résumé ───────────────────────────────────────────────────
         self.lbl_resume = ttk.Label(self.parent, text="", font=("Segoe UI", 10),
