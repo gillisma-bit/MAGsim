@@ -78,6 +78,11 @@ class TabStats:
                         variable=self.show_distances,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
+        self.show_bienetre = tk.BooleanVar(value=True)
+        ttk.Checkbutton(checks, text="Bien-être techniciens",
+                        variable=self.show_bienetre,
+                        command=self.refresh).pack(side=tk.LEFT, padx=6)
+
         self.lbl_info = ttk.Label(
             ctrl,
             text="Lancez une simulation dans l'onglet LIVE puis cliquez sur Actualiser.",
@@ -168,9 +173,12 @@ class TabStats:
         distances      = hist.get("distances_tech", {})
         has_distances  = bool(distances and any(bool(v) for v in distances.values()))
         show_dist      = self.show_distances.get() and has_distances
+        bienetre_data  = hist.get("bienetre", {})
+        has_bienetre   = bool(bienetre_data and any(bool(v) for v in bienetre_data.values()))
+        show_bienetre  = self.show_bienetre.get() and has_bienetre
 
         # Liste ordonnée des graphiques actifs → index subplot dynamique
-        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_dist]
+        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_dist, show_bienetre]
         n_plots = sum(active)
         if n_plots == 0:
             self.fig.clear()
@@ -367,6 +375,52 @@ class TabStats:
             ax6.set_xticklabels([f"Jour {j + 1}" for j in all_jours])
             ax6.legend(loc="upper right", fontsize=9, framealpha=0.75)
 
+        # ── Graphique bien-être des techniciens ────────────────────────
+        if show_bienetre:
+            from core.technician import TechnicianState
+            ax7 = _next_ax()
+            ax7.set_facecolor("#ffffff")
+            ax7.set_title("Bien-être des techniciens — mécontentement cumulatif par jour simulé",
+                          fontsize=11, fontweight="bold", pad=8)
+            ax7.set_ylabel("Mécontentement [0–1]")
+            ax7.set_xlabel("Jour simulé")
+            ax7.set_ylim(0, 1.05)
+            ax7.grid(True, alpha=0.3, linestyle="--", axis="y")
+
+            # Zones de couleur de fond selon les seuils
+            ax7.axhspan(0,    0.20, facecolor="#2ecc71", alpha=0.07)
+            ax7.axhspan(0.20, 0.40, facecolor="#f1c40f", alpha=0.07)
+            ax7.axhspan(0.40, 0.60, facecolor="#e67e22", alpha=0.07)
+            ax7.axhspan(0.60, 0.80, facecolor="#e74c3c", alpha=0.07)
+            ax7.axhspan(0.80, 1.05, facecolor="#8e44ad", alpha=0.07)
+
+            # Annotations des zones
+            for y_pos, label_be, color_be in [
+                (0.10, "Satisfait 😊", "#2ecc71"),
+                (0.30, "Neutre 😐", "#d4ac0d"),
+                (0.50, "Stressé 😟", "#e67e22"),
+                (0.70, "Épuisé 😠", "#e74c3c"),
+                (0.90, "Burn-out 🤢", "#8e44ad"),
+            ]:
+                ax7.axhline(y=y_pos, color=color_be, linestyle=":", alpha=0.30, linewidth=1)
+
+            TECH_COLORS = TechnicianState.COLORS
+            all_jours_be = sorted({j for d in bienetre_data.values() for j in d.keys()})
+            for i, (nom, jours_be) in enumerate(bienetre_data.items()):
+                xs = all_jours_be
+                ys = [jours_be.get(j, 0.0) for j in xs]
+                color = TECH_COLORS[i % len(TECH_COLORS)]
+                ax7.plot(xs, ys, color=color, linewidth=2.5, marker="o",
+                         markersize=6, label=nom, alpha=0.9)
+                # Annoter la dernière valeur
+                if xs and ys:
+                    ax7.annotate(f"{ys[-1]:.2f}", xy=(xs[-1], ys[-1]),
+                                 xytext=(4, 4), textcoords="offset points",
+                                 fontsize=9, color=color)
+            ax7.set_xticks(all_jours_be)
+            ax7.set_xticklabels([f"Jour {j + 1}" for j in all_jours_be])
+            ax7.legend(loc="upper left", fontsize=9, framealpha=0.75)
+
         self.fig.tight_layout(pad=2.8)
         self.canvas_mpl.draw()
 
@@ -421,6 +475,21 @@ class TabStats:
                 parts.append(f"{nom} = {total_m:.0f} m")
             dist_session_txt = "  |  🚶 Dist. session : " + "  /  ".join(parts)
 
+        # Bien-être : état actuel de chaque tech (dernière valeur connue)
+        bienetre_txt = ""
+        if bienetre_data:
+            from core.technician import TechnicianState
+            _tmp = TechnicianState(0, 0)
+            parts_be = []
+            for nom, jours_be in bienetre_data.items():
+                if jours_be:
+                    last_val = jours_be[max(jours_be.keys())]
+                    _tmp.mecontentement = last_val
+                    emoji_be, _, label_be = _tmp.etat_bien_etre()
+                    parts_be.append(f"{nom}: {emoji_be} {label_be} ({last_val:.2f})")
+            if parts_be:
+                bienetre_txt = "  |  🫀 " + "  /  ".join(parts_be)
+
         self.lbl_info.config(
             text=(f"Durée sim : {_fmt_duree(t_total)}  |  "
                   f"Tubes générés : {total_tubes}  |  "
@@ -429,7 +498,8 @@ class TabStats:
                   f"{transit_txt}  |  "
                   f"⚠ Rejets: {nb_rejetes}  Dégradés: {nb_degrades}  Pannes: {nb_pannes}"
                   f"{dispo_txt}"
-                  f"{dist_session_txt}")
+                  f"{dist_session_txt}"
+                  f"{bienetre_txt}")
         )
 
     # ------------------------------------------------------------------

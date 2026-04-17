@@ -458,5 +458,26 @@
             "taille_lot_min": 3,
             "taille_lot_max": 8
         }
+    },
+    "personnel": {
+        "charge_cible_defaut": 0.70,
+        "capacite_journaliere_normale": 150,
+        "seuil_accumulation_alerte": 20,
+        "quarts": [
+            {
+                "nom": "Jour",
+                "heure_debut": 7,
+                "heure_fin": 19,
+                "tech_ids": ["b1", "b2"],
+                "garde": false
+            },
+            {
+                "nom": "Garde nuit",
+                "heure_debut": 19,
+                "heure_fin": 7,
+                "tech_ids": ["b1"],
+                "garde": true
+            }
+        ]
     }
 }

@@ -36,7 +36,7 @@ class TabLive:
         self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                               "transit_time_avg": [], "transit_time_rolling": [],
                               "rejetes": [], "degrades": [], "pannes": {},
-                              "distances_tech": {}}
+                              "distances_tech": {}, "bienetre": {}}
         self.stats_tubes_total = 0
         self.tubes_sortis = 0  # Tubes ayant atteint la sortie
         self.transit_times_raw = []  # Durées de transit individuelles (arrivee → sortie)
@@ -273,7 +273,7 @@ class TabLive:
                 self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                                       "transit_time_avg": [], "transit_time_rolling": [],
                                       "rejetes": [], "degrades": [], "pannes": {},
-                                      "distances_tech": {}}
+                                      "distances_tech": {}, "bienetre": {}}
                 self._jours_connus_dist = set()
                 self.stats_tubes_total = 0
                 self.tubes_sortis = 0
@@ -303,6 +303,7 @@ class TabLive:
                         canvas_id=None, index=idx)
                     tech.pct_erreur_base = office.get("pct_erreur_tech", 0.0)
                     tech.pct_erreur     = tech.pct_erreur_base
+                    tech.nom            = office.get("nom", f"Tech {idx + 1}")
                     tech.experience     = int(office.get("experience", 3))
                     tech.age            = int(office.get("age", 35))
                     tech.seuil_charge_fatigue  = float(office.get("seuil_charge_fatigue", 0.70))
@@ -392,6 +393,7 @@ class TabLive:
                 tech = TechnicianState(spawn_x, spawn_y, index=idx)
                 tech.pct_erreur_base = office.get("pct_erreur_tech", 0.0)
                 tech.pct_erreur     = tech.pct_erreur_base
+                tech.nom            = office.get("nom", f"Tech {idx + 1}")
                 tech.experience     = int(office.get("experience", 3))
                 tech.age            = int(office.get("age", 35))
                 tech.seuil_charge_fatigue  = float(office.get("seuil_charge_fatigue", 0.70))
@@ -400,6 +402,11 @@ class TabLive:
                 tech.canvas_id = self.canvas.create_oval(
                     tech.x-10, tech.y-10, tech.x+10, tech.y+10,
                     fill=tech.color, outline="black", width=2, tags="tech")
+                # Emoji bien-être affiché au-dessus du sprite
+                emoji_init, _, _ = tech.etat_bien_etre()
+                tech.label_bienetre_id = self.canvas.create_text(
+                    tech.x, tech.y - 18, text=emoji_init,
+                    font=("Segoe UI", 10), tags="tech_bienetre")
                 self.technicians.append(tech)
             self.canvas.update()
             
@@ -413,6 +420,7 @@ class TabLive:
 
             # Réinitialiser les statistiques
             self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
+                                  "bienetre": {},
                                   "transit_time_avg": [], "transit_time_rolling": [],
                                   "rejetes": [], "degrades": [], "pannes": {},
                                   "distances_tech": {}}
@@ -642,6 +650,8 @@ class TabLive:
                     self.canvas.coords(tech.canvas_id,
                                       tech.x-10, tech.y-10,
                                       tech.x+10, tech.y+10)
+                    if tech.label_bienetre_id:
+                        self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
                     for tube in tech.carried_tubes:
                         if tube.get("id"):
                             self.canvas.coords(tube["id"],
@@ -658,6 +668,8 @@ class TabLive:
                 self.canvas.coords(tech.canvas_id,
                                   tech.x-10, tech.y-10,
                                   tech.x+10, tech.y+10)
+                if tech.label_bienetre_id:
+                    self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
                 for tube in tech.carried_tubes:
                     if tube.get("id"):
                         self.canvas.coords(tube["id"],
@@ -719,14 +731,30 @@ class TabLive:
             if jour_actuel not in self._jours_connus_dist:
                 self._jours_connus_dist.add(jour_actuel)
                 if jour_actuel > 0:
+                    personnel_cfg = self.config_manager.data.get("personnel", {})
+                    cap_jour = float(personnel_cfg.get("capacite_journaliere_normale", 150))
                     for tech in self.technicians:
                         tech._distance_debut_jour_px = tech.distance_parcourue_px
+                        # Mécontentement : comparaison tubes livrés hier vs capacité normale
+                        tubes_jour = tech.tubes_livres_session - tech._tubes_livres_debut_jour
+                        tech.mettre_a_jour_mecontentement(tubes_jour, cap_jour)
+                        tech._tubes_livres_debut_jour = tech.tubes_livres_session
+                        # Risque arrêt maladie : tirage aléatoire journalier
+                        import random as _rnd
+                        risque = tech.calculer_risque_arret_maladie()
+                        if risque > 0 and _rnd.random() < risque:
+                            tech.en_arret_maladie = True
+                        self._update_tech_sprite_bienetre(tech)
             for idx, tech in enumerate(self.technicians):
-                k = f"Tech {idx + 1}"
+                k = tech.nom if tech.nom else f"Tech {idx + 1}"
                 if k not in self.stats_history["distances_tech"]:
                     self.stats_history["distances_tech"][k] = {}
                 d_m = (tech.distance_parcourue_px - tech._distance_debut_jour_px) * 0.01
                 self.stats_history["distances_tech"][k][jour_actuel] = round(d_m, 1)
+                # Historique bien-être (valeur courante)
+                if k not in self.stats_history["bienetre"]:
+                    self.stats_history["bienetre"][k] = {}
+                self.stats_history["bienetre"][k][jour_actuel] = round(tech.mecontentement, 3)
 
             yield self.env.timeout(interval)
 
@@ -1136,6 +1164,7 @@ class TabLive:
         """Met à jour la bordure du sprite selon la fatigue courante du technicien.
 
         Vert → Jaune → Orange → Rouge au fur et à mesure que la fatigue monte.
+        Délègue aussi la mise à jour de l'emoji bien-être.
         """
         if self.headless or not self.canvas.winfo_exists() or not tech.canvas_id:
             return
@@ -1149,6 +1178,26 @@ class TabLive:
         else:
             clr, w = "#c0392b", 4
         self.canvas.itemconfig(tech.canvas_id, outline=clr, width=w)
+        self._update_tech_sprite_bienetre(tech)
+
+    def _update_tech_sprite_bienetre(self, tech):
+        """Met à jour l'emoji et la couleur de remplissage selon le bien-être du technicien."""
+        if self.headless or not self.canvas.winfo_exists():
+            return
+        emoji, couleur_be, _ = tech.etat_bien_etre()
+        # Couleur de remplissage du cercle : mélange entre couleur identité et couleur bien-être
+        # Si en arrêt maladie → remplissage gris + emoji spécial
+        if tech.en_arret_maladie:
+            if tech.canvas_id:
+                self.canvas.itemconfig(tech.canvas_id, fill="#bdc3c7", outline="#7f8c8d", width=3)
+            if tech.label_bienetre_id:
+                self.canvas.itemconfig(tech.label_bienetre_id, text="🏥")
+            return
+        if tech.canvas_id:
+            self.canvas.itemconfig(tech.canvas_id, fill=tech.color)
+        if tech.label_bienetre_id:
+            self.canvas.itemconfig(tech.label_bienetre_id, text=emoji)
+            self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
 
     def machine_breakdown_process(self, nom_machine, machine):
         """Processus indépendant modélisant les pannes par loi exponentielle (TMEP/TMR).

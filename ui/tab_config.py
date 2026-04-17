@@ -436,56 +436,103 @@ class TabConfig:
             f_t = ttk.LabelFrame(popup, text="👤 Caractéristiques du technicien", padding=12)
             f_t.pack(fill="x", padx=20, pady=10)
 
-            # Expérience
-            ttk.Label(f_t, text="Expérience (1 = novice  …  5 = expert) :").grid(
-                row=0, column=0, sticky="w", pady=3)
-            ent_exp = ttk.Entry(f_t, width=8)
-            ent_exp.insert(0, m_data.get("experience", 3))
-            ent_exp.grid(row=0, column=1, padx=5)
-            ttk.Label(f_t, text="Multiplie les erreurs : ×2.0 → ×0.4",
+            # Nom / identifiant
+            ttk.Label(f_t, text="Nom / identifiant :").grid(row=0, column=0, sticky="w", pady=3)
+            ent_nom = ttk.Entry(f_t, width=20)
+            ent_nom.insert(0, m_data.get("nom", ""))
+            ent_nom.grid(row=0, column=1, padx=5)
+            ttk.Label(f_t, text="Affiché dans les rapports et indicateurs de bien-être",
                       foreground="gray").grid(row=0, column=2, padx=6)
 
+            # Expérience
+            ttk.Label(f_t, text="Expérience (1 = novice  …  5 = expert) :").grid(
+                row=1, column=0, sticky="w", pady=3)
+            ent_exp = ttk.Entry(f_t, width=8)
+            ent_exp.insert(0, m_data.get("experience", 3))
+            ent_exp.grid(row=1, column=1, padx=5)
+            ttk.Label(f_t, text="Multiplie les erreurs : ×2.0 → ×0.4",
+                      foreground="gray").grid(row=1, column=2, padx=6)
+
             # Âge
-            ttk.Label(f_t, text="Âge (années) :").grid(row=1, column=0, sticky="w", pady=3)
+            ttk.Label(f_t, text="Âge (années) :").grid(row=2, column=0, sticky="w", pady=3)
             ent_age = ttk.Entry(f_t, width=8)
             ent_age.insert(0, m_data.get("age", 35))
-            ent_age.grid(row=1, column=1, padx=5)
+            ent_age.grid(row=2, column=1, padx=5)
             ttk.Label(f_t, text="Jeune ↑ vitesse + ↑ erreurs  |  Senior ↓ vitesse + ↓ erreurs",
-                      foreground="gray").grid(row=1, column=2, padx=6)
+                      foreground="gray").grid(row=2, column=2, padx=6)
 
             # Taux d'erreur de base
             ttk.Label(f_t, text="Taux d'erreur de base (0.0 – 1.0) :").grid(
-                row=2, column=0, sticky="w", pady=3)
+                row=3, column=0, sticky="w", pady=3)
             ent_pct = ttk.Entry(f_t, width=8)
             ent_pct.insert(0, m_data.get("pct_erreur_tech", 0.0))
-            ent_pct.grid(row=2, column=1, padx=5)
+            ent_pct.grid(row=3, column=1, padx=5)
             ttk.Label(f_t, text="Modulé par expérience · âge · fatigue · heure du jour",
-                      foreground="gray").grid(row=2, column=2, padx=6)
+                      foreground="gray").grid(row=3, column=2, padx=6)
 
             # Seuil de surcharge (affiché en %)
             ttk.Label(f_t, text="Seuil de surcharge (0 – 100 %) :").grid(
-                row=3, column=0, sticky="w", pady=3)
+                row=4, column=0, sticky="w", pady=3)
             ent_seuil = ttk.Entry(f_t, width=8)
             ent_seuil.insert(0, int(float(m_data.get("seuil_charge_fatigue", 0.70)) * 100))
-            ent_seuil.grid(row=3, column=1, padx=5)
+            ent_seuil.grid(row=4, column=1, padx=5)
             ttk.Label(f_t, text="Au-dessus de ce % de capacité, la fatigue commence à monter",
-                      foreground="gray").grid(row=3, column=2, padx=6)
+                      foreground="gray").grid(row=4, column=2, padx=6)
 
             # Taux de montée de fatigue
             ttk.Label(f_t, text="Taux de montée de fatigue :").grid(
-                row=4, column=0, sticky="w", pady=3)
+                row=5, column=0, sticky="w", pady=3)
             ent_taux = ttk.Entry(f_t, width=8)
             ent_taux.insert(0, m_data.get("taux_montee_fatigue", 0.01))
-            ent_taux.grid(row=4, column=1, padx=5)
+            ent_taux.grid(row=5, column=1, padx=5)
             ttk.Label(f_t, text="Incrément par tube livré en surcharge (ex. 0.01)",
-                      foreground="gray").grid(row=4, column=2, padx=6)
+                      foreground="gray").grid(row=5, column=2, padx=6)
 
             # Capacité max tubes portés
             ttk.Label(f_t, text="Capacité max (tubes portés simultanément) :").grid(
-                row=5, column=0, sticky="w", pady=3)
+                row=6, column=0, sticky="w", pady=3)
             ent_cap = ttk.Entry(f_t, width=8)
             ent_cap.insert(0, m_data.get("capacite_max_tubes", 10))
-            ent_cap.grid(row=5, column=1, padx=5)
+            ent_cap.grid(row=6, column=1, padx=5)
+
+            # ── Section personnel global (charge cible + quarts) ─────────────────
+            f_pers = ttk.LabelFrame(popup, text="🗓️ Quarts de travail & charge", padding=12)
+            f_pers.pack(fill="x", padx=20, pady=(0, 5))
+
+            personnel = self.config_manager.data.get("personnel", {})
+
+            ttk.Label(f_pers, text="Capacité journalière normale (tubes/jour) :").grid(
+                row=0, column=0, sticky="w", pady=3)
+            ent_cap_jour = ttk.Entry(f_pers, width=8)
+            ent_cap_jour.insert(0, personnel.get("capacite_journaliere_normale", 150))
+            ent_cap_jour.grid(row=0, column=1, padx=5)
+            ttk.Label(f_pers, text="Référence pour calculer la charge effective",
+                      foreground="gray").grid(row=0, column=2, padx=6)
+
+            ttk.Label(f_pers, text="Alerte accumulation entrée (nb tubes) :").grid(
+                row=1, column=0, sticky="w", pady=3)
+            ent_seuil_acc = ttk.Entry(f_pers, width=8)
+            ent_seuil_acc.insert(0, personnel.get("seuil_accumulation_alerte", 20))
+            ent_seuil_acc.grid(row=1, column=1, padx=5)
+            ttk.Label(f_pers, text="Déclenche la montée de cadence des techs",
+                      foreground="gray").grid(row=1, column=2, padx=6)
+
+            # Quarts : tableau lecture / info (édition complète dans un futur dialog dédié)
+            quarts = personnel.get("quarts", [])
+            if quarts:
+                ttk.Label(f_pers, text="Quarts définis :").grid(
+                    row=2, column=0, sticky="nw", pady=(6, 2))
+                txt_quarts = ""
+                for q in quarts:
+                    garde_tag = "  [GARDE]" if q.get("garde") else ""
+                    techids = ", ".join(q.get("tech_ids", []))
+                    txt_quarts += f"• {q['nom']} {q['heure_debut']}h–{q['heure_fin']}h : {techids}{garde_tag}\n"
+                ttk.Label(f_pers, text=txt_quarts.strip(), foreground="#555",
+                          font=("Segoe UI", 9)).grid(row=2, column=1, columnspan=2,
+                                                       sticky="w", padx=5)
+            ttk.Label(f_pers, text="(Édition complète des quarts : menu Configuration → Personnel)",
+                      foreground="#aaa", font=("Segoe UI", 8, "italic")).grid(
+                row=3, column=0, columnspan=3, sticky="w", pady=(2, 0))
 
             # ── Aperçu indicatif ─────────────────────────────────────────────────
             f_preview = ttk.LabelFrame(popup, text="🔍 Aperçu (expérience 3 · âge 35 · sans fatigue · 9h)",
@@ -531,18 +578,27 @@ class TabConfig:
             # ── Sauvegarde ───────────────────────────────────────────────────────
             def save_tech():
                 try:
+                    nom = ent_nom.get().strip()
                     exp = max(1, min(5, int(ent_exp.get())))
                     age = max(18, min(80, int(ent_age.get())))
                     pct = float(ent_pct.get())
                     seuil = float(ent_seuil.get()) / 100.0
                     taux = float(ent_taux.get())
                     cap_max = max(1, int(ent_cap.get()))
+                    m_data["nom"] = nom
                     m_data["experience"] = exp
                     m_data["age"] = age
                     m_data["pct_erreur_tech"] = pct
                     m_data["seuil_charge_fatigue"] = seuil
                     m_data["taux_montee_fatigue"] = taux
                     m_data["capacite_max_tubes"] = cap_max
+                    # Sauvegarder les paramètres personnel globaux
+                    if "personnel" not in self.config_manager.data:
+                        self.config_manager.data["personnel"] = {}
+                    cap_jour = max(1, int(ent_cap_jour.get()))
+                    seuil_acc = max(1, int(ent_seuil_acc.get()))
+                    self.config_manager.data["personnel"]["capacite_journaliere_normale"] = cap_jour
+                    self.config_manager.data["personnel"]["seuil_accumulation_alerte"] = seuil_acc
                     self.config_manager.sauvegarder()
                     popup.destroy()
                 except ValueError:
