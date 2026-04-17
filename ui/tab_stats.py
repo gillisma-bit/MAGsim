@@ -116,7 +116,8 @@ class TabStats:
         container = ttk.Frame(self.parent)
         container.pack(expand=True, fill="both", padx=4, pady=4)
 
-        self.fig = Figure(figsize=(15, 11), dpi=96, facecolor="#f4f6f9")
+        # La taille sera recalculée à chaque refresh() selon le nombre de graphiques actifs
+        self.fig = Figure(figsize=(15, 7), dpi=96, facecolor="#f4f6f9")
         self.canvas_mpl = FigureCanvasTkAgg(self.fig, master=container)
 
         toolbar = NavigationToolbar2Tk(self.canvas_mpl, container)
@@ -185,11 +186,17 @@ class TabStats:
             self.canvas_mpl.draw()
             return
 
-        # Compteur d'index courant (subplot 1-based)
+        # Grille 2 colonnes — chaque rangée a ~3.8 pouces de haut minimum
+        ncols = 2 if n_plots > 1 else 1
+        nrows = (n_plots + ncols - 1) // ncols   # division plafond
+        fig_h = max(7, nrows * 3.8)
+        self.fig.set_size_inches(15, fig_h)
+
+        # Compteur d'index courant (subplot 1-based, remplit gauche→droite, haut→bas)
         _plot_counter = [0]
         def _next_ax():
             _plot_counter[0] += 1
-            return self.fig.add_subplot(n_plots, 1, _plot_counter[0])
+            return self.fig.add_subplot(nrows, ncols, _plot_counter[0])
 
         self.fig.clear()
 
@@ -421,7 +428,7 @@ class TabStats:
             ax7.set_xticklabels([f"Jour {j + 1}" for j in all_jours_be])
             ax7.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
-        self.fig.tight_layout(pad=2.8)
+        self.fig.tight_layout(pad=1.8, h_pad=2.5, w_pad=2.0)
         self.canvas_mpl.draw()
 
         # ── Résumé dans la barre ───────────────────────────────────────
