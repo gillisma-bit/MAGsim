@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
 from core.config_manager import ConfigManager
+from ui.menu_bar import MenuBar
 from ui.tab_config import TabConfig
 from ui.tab_live import TabLive
 from ui.tab_stats import TabStats
@@ -17,8 +18,11 @@ class MAGsimApp:
 
         # 1. Initialisation de la mémoire (JSON)
         self.config_manager = ConfigManager()
-        
-        # 2. Style visuel (Thème moderne)
+
+        # 2. Barre de menus
+        self.menu_bar = MenuBar(self)
+
+        # 3. Style visuel (Thème moderne)
         self.style = ttk.Style()
         self.style.theme_use('clam') 
         self.style.configure("TNotebook.Tab", font=("Segoe UI", 11, "bold"), padding=[15, 8])
@@ -47,9 +51,9 @@ class MAGsimApp:
 
         # Rafraîchir le diagnostic quand l'onglet devient actif
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
-        
-        # Rafraîchir le diagnostic quand l'onglet devient actif
-        self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
+
+        # Interception du bouton X de la fenêtre
+        self.root.protocol("WM_DELETE_WINDOW", self.menu_bar._quitter)
 
     def _on_tab_changed(self, event):
         tab = self.notebook.index(self.notebook.select())
