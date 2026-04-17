@@ -6,6 +6,8 @@ La suppression vérifie si le produit est utilisé dans des protocoles actifs.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import unicodedata
+import re
 
 from core.db_manager import DBManager
 from core.consommable import Consommable
@@ -102,19 +104,20 @@ class DialogConsommables(tk.Toplevel):
         self._tree.bind("<<TreeviewSelect>>", self._on_selection)
 
     def _construire_formulaire(self, parent):
-        # Identifiant
-        ttk.Label(parent, text="Identifiant (ID unique) *").grid(
+        # Identifiant — généré automatiquement, affiché en lecture seule
+        ttk.Label(parent, text="Identifiant (auto)").grid(
             row=0, column=0, sticky="w", pady=3)
-        self._var_id = tk.StringVar()
-        self._ent_id = ttk.Entry(parent, textvariable=self._var_id)
-        self._ent_id.grid(row=0, column=1, sticky="ew", padx=6, pady=3)
+        self._var_id = tk.StringVar(value="—")
+        ttk.Label(parent, textvariable=self._var_id,
+                  foreground="#666666",
+                  font=("Courier", 9)).grid(row=0, column=1, sticky="w", padx=6, pady=3)
 
         # Nom
         ttk.Label(parent, text="Nom du produit *").grid(
             row=1, column=0, sticky="w", pady=3)
         self._var_nom = tk.StringVar()
-        ttk.Entry(parent, textvariable=self._var_nom).grid(
-            row=1, column=1, sticky="ew", padx=6, pady=3)
+        ent_nom = ttk.Entry(parent, textvariable=self._var_nom)
+        ent_nom.grid(row=1, column=1, sticky="ew", padx=6, pady=3)
 
         # Catégorie
         ttk.Label(parent, text="Catégorie *").grid(
@@ -177,6 +180,31 @@ class DialogConsommables(tk.Toplevel):
     # ------------------------------------------------------------------
     # Données
     # ------------------------------------------------------------------
+    @staticmethod
+    def _slugifier(texte: str) -> str:
+        """Convertit un nom en identifiant : 'Réactif EDTA K2' → 'REACTIF_EDTA_K2'."""
+        # Supprime les accents
+        texte = unicodedata.normalize("NFD", texte)
+        texte = "".join(c for c in texte if unicodedata.category(c) != "Mn")
+        # Majuscules, remplace les caractères non alphanumériques par _
+        texte = re.sub(r"[^A-Za-z0-9]+", "_", texte).upper().strip("_")
+        return texte
+
+    def _generer_id_unique(self, nom: str) -> str:
+        """Génère un ID unique basé sur le nom, avec suffixe si collision."""
+        base = self._slugifier(nom)
+        if not base:
+            base = "CONSOMMABLE"
+        # Récupère tous les IDs existants
+        ids_existants = {c.id for c in self.db.get_consommables()}
+        if base not in ids_existants:
+            return base
+        # Ajoute un suffixe numérique
+        i = 2
+        while f"{base}_{i}" in ids_existants:
+            i += 1
+        return f"{base}_{i}"
+
     def _rafraichir_liste(self):
         """Recharge la liste selon les filtres actifs."""
         service = self._var_service.get()
@@ -204,7 +232,6 @@ class DialogConsommables(tk.Toplevel):
     def _charger_dans_formulaire(self, c: Consommable):
         """Remplit le formulaire avec un consommable existant."""
         self._var_id.set(c.id)
-        self._ent_id.config(state="disabled")      # l'ID ne change pas en édition
         self._var_nom.set(c.nom)
         self._var_categorie.set(c.categorie)
         self._var_service_form.set(c.service)
@@ -216,15 +243,16 @@ class DialogConsommables(tk.Toplevel):
 
     def _lire_formulaire(self):
         """Lit et valide les champs. Retourne un dict ou lève ValueError."""
-        id_val = self._var_id.get().strip()
-        nom    = self._var_nom.get().strip()
-
-        if not id_val:
-            raise ValueError("L'identifiant est obligatoire.")
+        nom = self._var_nom.get().strip()
         if not nom:
             raise ValueError("Le nom du produit est obligatoire.")
-        if " " in id_val:
-            raise ValueError("L'identifiant ne doit pas contenir d'espaces.")
+
+        # ID : conserve l'existant en édition, génère un nouveau à la création
+        if self._consommable_selectionne:
+            id_val = self._consommable_selectionne.id
+        else:
+            id_val = self._generer_id_unique(nom)
+            self._var_id.set(id_val)  # affiche l'ID généré
 
         try:
             cout = float(self._var_cout.get().replace(",", "."))
@@ -249,8 +277,7 @@ class DialogConsommables(tk.Toplevel):
     def _nouveau(self):
         """Vide le formulaire pour créer un nouveau consommable."""
         self._consommable_selectionne = None
-        self._var_id.set("")
-        self._ent_id.config(state="normal")
+        self._var_id.set("— généré à la sauvegarde —")
         self._var_nom.set("")
         self._var_categorie.set(Consommable.CATEGORIES[0])
         self._var_service_form.set("CTS")
