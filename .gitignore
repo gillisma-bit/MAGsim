@@ -28,3 +28,8 @@ Thumbs.db
 # Logs et données temporaires
 *.log
 *.tmp
+
+# Base de données SQLite (données locales, pas du code)
+*.db
+*.db-shm
+*.db-wal

@@ -1,8 +1,6 @@
 import json
 import os
 
-from core.consommable import Consommable
-
 
 class ConfigManager:
     def __init__(self, filepath="data/config_mag.json"):
@@ -20,7 +18,6 @@ class ConfigManager:
                     if "sol" not in data: data["sol"] = {}
                     if "catalog_protocoles" not in data: data["catalog_protocoles"] = {}
                     if "types_tubes" not in data: data["types_tubes"] = {}
-                    if "consommables" not in data: data["consommables"] = {}
                     return data
             except:
                 print("Erreur de lecture JSON. Création d'une config neuve.")
@@ -31,7 +28,6 @@ class ConfigManager:
             "sol": {},
             "catalog_protocoles": {},
             "types_tubes": {},
-            "consommables": {},
         }
 
     def sauvegarder(self):
@@ -134,40 +130,6 @@ class ConfigManager:
         """Retourne les infos d'un type de tube spécifique."""
         return self.data.get("types_tubes", {}).get(nom, None)
 
-    # --- GESTION DES CONSOMMABLES ---
-    def ajouter_consommable(self, id: str, nom: str, categorie: str, service: str,
-                            unite_mesure: str, cout_unitaire: float = 0.0,
-                            description: str = "") -> Consommable:
-        """Crée ou remplace un consommable dans la liste."""
-        c = Consommable(id, nom, categorie, service, unite_mesure, cout_unitaire, description)
-        if "consommables" not in self.data:
-            self.data["consommables"] = {}
-        self.data["consommables"][id] = c.to_dict()
-        self.sauvegarder()
-        return c
-
-    def supprimer_consommable(self, id: str):
-        """Supprime un consommable par son identifiant."""
-        if id in self.data.get("consommables", {}):
-            del self.data["consommables"][id]
-            self.sauvegarder()
-
-    def get_consommables(self) -> dict[str, Consommable]:
-        """Retourne tous les consommables sous forme de dict {id: Consommable}."""
-        return {
-            id: Consommable.from_dict(id, data)
-            for id, data in self.data.get("consommables", {}).items()
-        }
-
-    def get_consommables_par_service(self, service: str) -> dict[str, Consommable]:
-        """Retourne uniquement les consommables d'un service donné (CTS, CP, PG)."""
-        return {
-            id: c
-            for id, c in self.get_consommables().items()
-            if c.service == service
-        }
-
-    def get_consommable(self, id: str):
-        """Retourne un consommable spécifique ou None s'il n'existe pas."""
-        data = self.data.get("consommables", {}).get(id)
-        return Consommable.from_dict(id, data) if data else None
+    def extraire_consommables_json(self) -> dict:
+        """Retourne les consommables encore présents dans le JSON (migration unique)."""
+        return self.data.pop("consommables", {})
