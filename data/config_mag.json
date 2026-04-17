@@ -458,5 +458,31 @@
             "taille_lot_min": 3,
             "taille_lot_max": 8
         }
+    },
+    "consommables": {
+        "EDTA_K2": {
+            "nom": "Réactif EDTA K2",
+            "categorie": "reactif",
+            "service": "CTS",
+            "unite_mesure": "mL",
+            "cout_unitaire": 0.12,
+            "description": "Anticoagulant pour tubes hématologie"
+        },
+        "NaCl_09": {
+            "nom": "NaCl 0.9% (sérum physiologique)",
+            "categorie": "diluant",
+            "service": "CTS",
+            "unite_mesure": "mL",
+            "cout_unitaire": 0.05,
+            "description": "Diluant standard pour dilutions plasmatiques"
+        },
+        "FILTRE_022": {
+            "nom": "Filtre seringue 0.22 µm",
+            "categorie": "objet",
+            "service": "CTS",
+            "unite_mesure": "unité",
+            "cout_unitaire": 1.85,
+            "description": "Filtre stérilisant usage unique"
+        }
     }
 }
