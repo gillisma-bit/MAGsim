@@ -562,9 +562,9 @@ class TabStats:
                     total_dist = sum(jours_dist.values())
                     nb_jours = len(jours_dist)
                     moy_dist = total_dist / nb_jours if nb_jours else 0
-                    lignes_dist.append(
-                        f"{nom} : {moy_dist:.0f} m/jour  ({total_dist:.0f} m total)"
-                    )
+                    lignes_dist.append(f"{nom} :")
+                    lignes_dist.append(f"  moy/jour : {moy_dist:.0f} m")
+                    lignes_dist.append(f"  total    : {total_dist:.0f} m")
             if lignes_dist:
                 self._stats_card(self._resume_inner, "neutre",
                                  "🚶  Distance marchée / tech",
