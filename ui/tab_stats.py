@@ -73,22 +73,10 @@ class TabStats:
                         variable=self.show_errors,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
-        self.show_distances = tk.BooleanVar(value=True)
-        ttk.Checkbutton(checks, text="Distances techniciens",
-                        variable=self.show_distances,
-                        command=self.refresh).pack(side=tk.LEFT, padx=6)
-
         self.show_bienetre = tk.BooleanVar(value=True)
         ttk.Checkbutton(checks, text="Bien-être techniciens",
                         variable=self.show_bienetre,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
-
-        self.lbl_info = ttk.Label(
-            ctrl,
-            text="Lancez une simulation dans l'onglet LIVE puis cliquez sur Actualiser.",
-            font=("Segoe UI", 10), foreground="#555"
-        )
-        self.lbl_info.pack(side=tk.LEFT, padx=18)
 
         # --- Barre de simulation accélérée ---
         fast = ttk.LabelFrame(self.parent, text=" ⚡ Simulation accélérée (sans animation) ")
@@ -112,31 +100,91 @@ class TabStats:
         self.lbl_fast_status = ttk.Label(fast, text="", font=("Segoe UI", 9), foreground="#2c3e50")
         self.lbl_fast_status.pack(side=tk.LEFT, padx=4)
 
-        # --- Zone matplotlib ---
-        container = ttk.Frame(self.parent)
-        container.pack(expand=True, fill="both", padx=4, pady=4)
+        # --- Zone principale : graphiques (gauche) + panneau résumé (droite) ---
+        main_area = tk.Frame(self.parent)
+        main_area.pack(expand=True, fill="both", padx=4, pady=4)
+        main_area.columnconfigure(0, weight=1)
+        main_area.columnconfigure(1, weight=0)
+        main_area.rowconfigure(0, weight=1)
+
+        # ── Colonne gauche : matplotlib ───────────────────────────────────────
+        container = tk.Frame(main_area)
+        container.grid(row=0, column=0, sticky="nsew")
 
         # La taille sera recalculée à chaque refresh() selon le nombre de graphiques actifs
-        self.fig = Figure(figsize=(15, 7), dpi=96, facecolor="#f4f6f9")
+        self.fig = Figure(figsize=(12, 7), dpi=96, facecolor="#f4f6f9")
         self.canvas_mpl = FigureCanvasTkAgg(self.fig, master=container)
 
         toolbar = NavigationToolbar2Tk(self.canvas_mpl, container)
         toolbar.update()
-
         self.canvas_mpl.get_tk_widget().pack(expand=True, fill="both")
+
+        # ── Séparateur ────────────────────────────────────────────────────────
+        tk.Frame(main_area, bg="#cccccc", width=1).grid(row=0, column=1, sticky="ns")
+
+        # ── Colonne droite : panneau résumé ───────────────────────────────────
+        self._resume_frame = tk.Frame(main_area, bg="#f8f9fa", width=260)
+        self._resume_frame.grid(row=0, column=2, sticky="nsew")
+        self._resume_frame.grid_propagate(False)   # largeur fixe
+        main_area.columnconfigure(2, weight=0)
+
+        tk.Label(self._resume_frame,
+                 text="📊  Indicateurs clés",
+                 font=("Segoe UI", 11, "bold"),
+                 bg="#f8f9fa", fg="#2c3e50",
+                 anchor="w", padx=12, pady=8).pack(fill="x")
+        tk.Frame(self._resume_frame, bg="#dde1e7", height=1).pack(fill="x")
+
+        # Canvas scrollable pour les cartes
+        self._resume_canvas = tk.Canvas(self._resume_frame, bg="#f8f9fa",
+                                        highlightthickness=0, width=258)
+        sb_res = ttk.Scrollbar(self._resume_frame, orient="vertical",
+                               command=self._resume_canvas.yview)
+        self._resume_canvas.configure(yscrollcommand=sb_res.set)
+        sb_res.pack(side=tk.RIGHT, fill="y")
+        self._resume_canvas.pack(side=tk.LEFT, fill="both", expand=True)
+
+        self._resume_inner = tk.Frame(self._resume_canvas, bg="#f8f9fa")
+        self._resume_win = self._resume_canvas.create_window(
+            (0, 0), window=self._resume_inner, anchor="nw")
+
+        self._resume_inner.bind("<Configure>",
+            lambda _: self._resume_canvas.configure(
+                scrollregion=self._resume_canvas.bbox("all")))
+        self._resume_canvas.bind("<Configure>",
+            lambda e: self._resume_canvas.itemconfig(self._resume_win, width=e.width))
+        self._resume_canvas.bind("<MouseWheel>",
+            lambda e: self._resume_canvas.yview_scroll(-1*(e.delta//120), "units"))
+
+        # Message initial
+        self._resume_placeholder = tk.Label(
+            self._resume_inner,
+            text="Lancez une simulation\npuis cliquez sur\nActualiser.",
+            font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#999",
+            justify="center", pady=20)
+        self._resume_placeholder.pack()
 
     # ------------------------------------------------------------------
     def refresh(self):
         if not HAS_MATPLOTLIB:
             return
         if not self.tab_live:
-            self.lbl_info.config(text="Référence à la simulation manquante.")
+            for w in self._resume_inner.winfo_children():
+                w.destroy()
+            tk.Label(self._resume_inner,
+                     text="Référence à la simulation\nmanquante.",
+                     font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#c0392b",
+                     justify="center", pady=20).pack()
             return
 
         hist = getattr(self.tab_live, "stats_history", None)
         if not hist or not hist.get("time"):
-            self.lbl_info.config(
-                text="Aucune donnée — démarrez une simulation et attendez quelques secondes.")
+            for w in self._resume_inner.winfo_children():
+                w.destroy()
+            tk.Label(self._resume_inner,
+                     text="Aucune donnée —\ndémarrez une simulation\net attendez quelques secondes.",
+                     font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#999",
+                     justify="center", pady=20).pack()
             return
 
         times = hist["time"]
@@ -172,14 +220,12 @@ class TabStats:
         show_transit   = self.show_transit.get()
         show_errors    = self.show_errors.get()
         distances      = hist.get("distances_tech", {})
-        has_distances  = bool(distances and any(bool(v) for v in distances.values()))
-        show_dist      = self.show_distances.get() and has_distances
         bienetre_data  = hist.get("bienetre", {})
         has_bienetre   = bool(bienetre_data and any(bool(v) for v in bienetre_data.values()))
         show_bienetre  = self.show_bienetre.get() and has_bienetre
 
         # Liste ordonnée des graphiques actifs → index subplot dynamique
-        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_dist, show_bienetre]
+        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_bienetre]
         n_plots = sum(active)
         if n_plots == 0:
             self.fig.clear()
@@ -351,37 +397,6 @@ class TabStats:
                          fontsize=10, color="#888", style="italic")
             ax5.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
-        # ── Graphique distance marchée par technicien par jour simulé ──
-        if show_dist:
-            from core.technician import TechnicianState
-            ax6 = _next_ax()
-            ax6.set_facecolor("#ffffff")
-            ax6.set_title("Distance marchée par technicien par jour simulé  (1 case = 50 cm)",
-                          fontsize=11, fontweight="bold", pad=8)
-            ax6.set_ylabel("Distance (m)")
-            ax6.set_xlabel("Jour simulé")
-            ax6.grid(True, alpha=0.3, linestyle="--", axis="y")
-
-            TECH_COLORS = TechnicianState.COLORS
-            all_jours = sorted({j for d in distances.values() for j in d.keys()})
-            n_techs = len(distances)
-            width = 0.8 / max(1, n_techs)
-            for i, (nom, jours_dist) in enumerate(distances.items()):
-                offsets = [j - 0.4 + i * width + width / 2
-                           for j in range(len(all_jours))]
-                vals = [jours_dist.get(j, 0.0) for j in all_jours]
-                color = TECH_COLORS[i % len(TECH_COLORS)]
-                bars = ax6.bar(offsets, vals, width=width * 0.9,
-                               color=color, alpha=0.85, label=nom, edgecolor="white")
-                for bar, v in zip(bars, vals):
-                    if v > 0:
-                        ax6.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                                 f"{v:.1f} m", ha="center", va="bottom",
-                                 fontsize=8, color="#333333")
-            ax6.set_xticks(range(len(all_jours)))
-            ax6.set_xticklabels([f"Jour {j + 1}" for j in all_jours])
-            ax6.legend(loc="upper right", fontsize=9, framealpha=0.75)
-
         # ── Graphique bien-être des techniciens ────────────────────────
         if show_bienetre:
             from core.technician import TechnicianState
@@ -431,83 +446,155 @@ class TabStats:
         self.fig.tight_layout(pad=1.8, h_pad=2.5, w_pad=2.0)
         self.canvas_mpl.draw()
 
-        # ── Résumé dans la barre ───────────────────────────────────────
+        # ── Panneau résumé (colonne droite) ────────────────────────────
+        self._update_panneau_resume(hist, times, noms, machines, distances, bienetre_data, _fmt_duree)
+
+    # ------------------------------------------------------------------
+    def _stats_card(self, parent, niveau, titre, corps_lignes):
+        """Carte visuellement stylisée dans le panneau résumé."""
+        COULEURS = {
+            "ok":      ("#27ae60", "#eafaf1"),
+            "info":    ("#2980b9", "#eaf3fb"),
+            "warning": ("#e67e22", "#fef9ec"),
+            "error":   ("#c0392b", "#fdf2f2"),
+            "neutre":  ("#7f8c8d", "#f5f5f5"),
+        }
+        accent, bg = COULEURS.get(niveau, COULEURS["neutre"])
+
+        outer = tk.Frame(parent, bg=accent, padx=1, pady=1)
+        outer.pack(fill="x", padx=8, pady=4)
+
+        inner = tk.Frame(outer, bg=bg, padx=8, pady=5)
+        inner.pack(fill="x")
+
+        tk.Label(inner, text=titre, font=("Segoe UI", 9, "bold"),
+                 bg=bg, fg=accent, anchor="w").pack(fill="x")
+
+        for ligne in corps_lignes:
+            tk.Label(inner, text=ligne, font=("Segoe UI", 9),
+                     bg=bg, fg="#2c3e50", anchor="w", wraplength=220,
+                     justify="left").pack(fill="x")
+
+    def _update_panneau_resume(self, hist, times, noms, machines,
+                               distances, bienetre_data, fmt_duree):
+        """Met à jour le panneau résumé à droite des graphiques."""
+        # Vider les cartes précédentes
+        for w in self._resume_inner.winfo_children():
+            w.destroy()
+
+        if hasattr(self, "_resume_placeholder"):
+            self._resume_placeholder = None
+
         t_total = times[-1] if times else 0
         total_tubes = getattr(self.tab_live, "stats_tubes_total", 0)
 
-        # Goulot : machine avec la plus grande longueur de file moyenne
-        goulot_nom = "—"
-        goulot_val = -1
+        # ─ Durée + volume ──────────────────────────────────────────
+        self._stats_card(self._resume_inner, "info",
+                         "🕐  Durée & volume",
+                         [f"Durée simulée : {fmt_duree(t_total)}",
+                          f"Tubes générés : {total_tubes}"])
+
+        # ─ Goulot + machine la plus occupée ────────────────────────
+        goulot_nom = "—"  ;  goulot_val = -1.0
+        busiest_nom = "—"  ;  busiest_val = -1.0
         for nom in noms:
-            data = hist["queues"].get(nom, [])
-            if data:
-                avg = sum(data) / len(data)
+            q = hist["queues"].get(nom, [])
+            if q:
+                avg = sum(q) / len(q)
                 if avg > goulot_val:
-                    goulot_val = avg
-                    goulot_nom = nom
-
-        # Machine la plus occupée
-        busiest_nom = "—"
-        busiest_val = -1
-        for nom in noms:
-            raw = hist["busy"].get(nom, [])
-            if raw:
-                pct = sum(raw) / len(raw) * 100
+                    goulot_val = avg  ;  goulot_nom = nom
+            b = hist["busy"].get(nom, [])
+            if b:
+                pct = sum(b) / len(b) * 100
                 if pct > busiest_val:
-                    busiest_val = pct
-                    busiest_nom = nom
+                    busiest_val = pct  ;  busiest_nom = nom
 
+        fk_niv = "warning" if goulot_val > 3 else "ok"
+        self._stats_card(self._resume_inner, fk_niv,
+                         "🎀  Goulot étranglement",
+                         [f"File la plus longue : {goulot_nom}",
+                          f"Longueur moy. : {goulot_val:.1f} tube(s)",
+                          f"Machine la plus occupée : {busiest_nom}",
+                          f"Occupation : {busiest_val:.0f} %"])
+
+        # ─ Transit ────────────────────────────────────────────────
+        transit_avg = hist.get("transit_time_avg", [])
         transit_roll = hist.get("transit_time_rolling", [])
-        last_roll = next((v for v in reversed(transit_roll) if v is not None), None)
-        transit_txt = f"  |  Transit (glissant) : {_fmt_duree(last_roll)}" if last_roll else ""
-        nb_rejetes  = getattr(self.tab_live, "tubes_rejetes", 0)
+        avg_val   = next((v for v in reversed(transit_avg)  if v is not None), None)
+        roll_val  = next((v for v in reversed(transit_roll) if v is not None), None)
+        tr_niv = "warning" if (avg_val and avg_val > 30) else "ok"
+        self._stats_card(self._resume_inner, tr_niv,
+                         "⏱  Temps de transit",
+                         [f"Moyen   : {fmt_duree(avg_val)}",
+                          f"Glissant: {fmt_duree(roll_val)}"])
+
+        # ─ Rejets / dégradés / pannes ────────────────────────────
+        nb_rejetes  = getattr(self.tab_live, "tubes_rejetes",  0)
         nb_degrades = getattr(self.tab_live, "tubes_degrades", 0)
         nb_pannes   = sum(len(v) for v in hist.get("pannes", {}).values())
+        err_niv = "error" if (nb_rejetes + nb_degrades + nb_pannes > 0) else "ok"
+        self._stats_card(self._resume_inner, err_niv,
+                         "⚠  Incidents",
+                         [f"Rejets      : {nb_rejetes}",
+                          f"Dégradés   : {nb_degrades}",
+                          f"Pannes mach.: {nb_pannes}"])
 
-        # Disponibilité théorique par machine (TMEP / (TMEP + TMR))
-        dispos = []
+        # ─ Disponibilité théorique ────────────────────────────────
+        lignes_dispo = []
         for nom in noms:
             m = machines[nom]
             tmep_m = m.get("tmep", 0) or 0
             tmr_m  = m.get("tmr",  0) or 0
             if tmep_m > 0 and tmr_m > 0:
-                dispos.append(f"{nom}={tmep_m/(tmep_m+tmr_m)*100:.0f}%")
-        dispo_txt = ("  |  Dispo théorique : " + "  ".join(dispos)) if dispos else ""
-        # Distances cumulées session (sur tous les jours)
-        dist_session_txt = ""
-        if has_distances:
-            parts = []
-            for nom, jours_dist in distances.items():
-                total_m = sum(jours_dist.values())
-                parts.append(f"{nom} = {total_m:.0f} m")
-            dist_session_txt = "  |  🚶 Dist. session : " + "  /  ".join(parts)
+                dispo = tmep_m / (tmep_m + tmr_m) * 100
+                niv_d = "ok" if dispo >= 90 else ("warning" if dispo >= 70 else "error")
+                lignes_dispo.append(f"{nom} : {dispo:.0f} %")
+        if lignes_dispo:
+            self._stats_card(self._resume_inner, "info",
+                             "📦  Disponibilité théorique",
+                             lignes_dispo)
 
-        # Bien-être : état actuel de chaque tech (dernière valeur connue)
-        bienetre_txt = ""
+        # ─ Distance marchée (texte) ───────────────────────────────
+        if distances and any(bool(v) for v in distances.values()):
+            lignes_dist = []
+            for nom, jours_dist in distances.items():
+                if jours_dist:
+                    total_dist = sum(jours_dist.values())
+                    par_jour = [f"J{j+1}:{v:.0f} m" for j, v in sorted(jours_dist.items())]
+                    lignes_dist.append(f"{nom} : {total_dist:.0f} m total")
+                    lignes_dist.append("  " + "  ".join(par_jour))
+            if lignes_dist:
+                self._stats_card(self._resume_inner, "neutre",
+                                 "🚶  Distance marchée / tech",
+                                 lignes_dist)
+
+        # ─ Bien-être techniciens ─────────────────────────────────
         if bienetre_data:
             from core.technician import TechnicianState
             _tmp = TechnicianState(0, 0)
-            parts_be = []
+            lignes_be = []
+            pire_niv = "ok"
             for nom, jours_be in bienetre_data.items():
                 if jours_be:
                     last_val = jours_be[max(jours_be.keys())]
                     _tmp.mecontentement = last_val
                     emoji_be, _, label_be = _tmp.etat_bien_etre()
-                    parts_be.append(f"{nom}: {emoji_be} {label_be} ({last_val:.2f})")
-            if parts_be:
-                bienetre_txt = "  |  🫀 " + "  /  ".join(parts_be)
+                    risque = _tmp.calculer_risque_arret_maladie()
+                    lignes_be.append(f"{emoji_be} {nom} : {label_be}")
+                    if risque > 0.5:
+                        lignes_be.append(f"   ⚠ Risque arrêt : {risque*100:.0f} %")
+                        pire_niv = "warning"
+                    if risque > 0.8:
+                        pire_niv = "error"
+            if lignes_be:
+                self._stats_card(self._resume_inner, pire_niv,
+                                 "🫀  Bien-être techniciens",
+                                 lignes_be)
 
-        self.lbl_info.config(
-            text=(f"Durée sim : {_fmt_duree(t_total)}  |  "
-                  f"Tubes générés : {total_tubes}  |  "
-                  f"File la plus longue : {goulot_nom} (moy {goulot_val:.1f})  |  "
-                  f"Machine la plus occupée : {busiest_nom} ({busiest_val:.0f} %)"
-                  f"{transit_txt}  |  "
-                  f"⚠ Rejets: {nb_rejetes}  Dégradés: {nb_degrades}  Pannes: {nb_pannes}"
-                  f"{dispo_txt}"
-                  f"{dist_session_txt}"
-                  f"{bienetre_txt}")
-        )
+        # Forcer le recalcul de la zone de défilement
+        self._resume_inner.update_idletasks()
+        self._resume_canvas.configure(
+            scrollregion=self._resume_canvas.bbox("all"))
 
     # ------------------------------------------------------------------
     def lancer_simulation_rapide(self):
@@ -563,4 +650,10 @@ class TabStats:
         if HAS_MATPLOTLIB:
             self.fig.clear()
             self.canvas_mpl.draw()
-        self.lbl_info.config(text="Historique effacé.")
+        # Vider le panneau résumé
+        for w in self._resume_inner.winfo_children():
+            w.destroy()
+        tk.Label(self._resume_inner,
+                 text="Historique effacé.\nLancez une simulation\npuis cliquez sur Actualiser.",
+                 font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#999",
+                 justify="center", pady=20).pack()
