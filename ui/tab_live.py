@@ -36,7 +36,8 @@ class TabLive:
         self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                               "transit_time_avg": [], "transit_time_rolling": [],
                               "rejetes": [], "degrades": [], "pannes": {},
-                              "distances_tech": {}, "bienetre": {}}
+                              "distances_tech": {}, "bienetre": {},
+                              "arrivees_par_heure": {}}
         self.stats_tubes_total = 0
         self.tubes_sortis = 0  # Tubes ayant atteint la sortie
         self.transit_times_raw = []  # Durées de transit individuelles (arrivee → sortie)
@@ -273,7 +274,8 @@ class TabLive:
                 self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                                       "transit_time_avg": [], "transit_time_rolling": [],
                                       "rejetes": [], "degrades": [], "pannes": {},
-                                      "distances_tech": {}, "bienetre": {}}
+                                      "distances_tech": {}, "bienetre": {},
+                                      "arrivees_par_heure": {}}
                 self._jours_connus_dist = set()
                 self.stats_tubes_total = 0
                 self.tubes_sortis = 0
@@ -423,7 +425,8 @@ class TabLive:
                                   "bienetre": {},
                                   "transit_time_avg": [], "transit_time_rolling": [],
                                   "rejetes": [], "degrades": [], "pannes": {},
-                                  "distances_tech": {}}
+                                  "distances_tech": {},
+                                  "arrivees_par_heure": {}}
             self._jours_connus_dist = set()
             self.stats_tubes_total = 0
             self.tubes_sortis = 0
@@ -878,6 +881,10 @@ class TabLive:
                             self.entry_queue.insert(0, tube)
                         else:
                             self.entry_queue.append(tube)
+                        # Compter l'arrivée dans le créneau horaire (heure de la journée, 0-23)
+                        heure_abs = int((self.env.now / 60 + self.heure_debut_sim)) % 24
+                        aph = self.stats_history["arrivees_par_heure"]
+                        aph[heure_abs] = aph.get(heure_abs, 0) + 1
                     self.stats_tubes_total += 1
 
                 self.prochaine_arrivee = self.env.now + prochaine_interarrivee()

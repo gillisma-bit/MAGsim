@@ -78,6 +78,11 @@ class TabStats:
                         variable=self.show_bienetre,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
+        self.show_arrivees = tk.BooleanVar(value=True)
+        ttk.Checkbutton(checks, text="Arrivées / heure",
+                        variable=self.show_arrivees,
+                        command=self.refresh).pack(side=tk.LEFT, padx=6)
+
         # --- Barre de simulation accélérée ---
         fast = ttk.LabelFrame(self.parent, text=" ⚡ Simulation accélérée (sans animation) ")
         fast.pack(fill="x", padx=12, pady=(2, 4))
@@ -223,9 +228,11 @@ class TabStats:
         bienetre_data  = hist.get("bienetre", {})
         has_bienetre   = bool(bienetre_data and any(bool(v) for v in bienetre_data.values()))
         show_bienetre  = self.show_bienetre.get() and has_bienetre
+        arrivees_data  = hist.get("arrivees_par_heure", {})
+        show_arrivees  = self.show_arrivees.get() and bool(arrivees_data)
 
         # Liste ordonnée des graphiques actifs → index subplot dynamique
-        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_bienetre]
+        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_bienetre, show_arrivees]
         n_plots = sum(active)
         if n_plots == 0:
             self.fig.clear()
@@ -442,6 +449,29 @@ class TabStats:
             ax7.set_xticks(all_jours_be)
             ax7.set_xticklabels([f"Jour {j + 1}" for j in all_jours_be])
             ax7.legend(loc="upper left", fontsize=9, framealpha=0.75)
+
+        # ── Graphique arrivées par heure ───────────────────────────────
+        if show_arrivees:
+            ax8 = _next_ax()
+            ax8.set_facecolor("#ffffff")
+            ax8.set_title("Tubes reçus par créneau horaire",
+                          fontsize=11, fontweight="bold", pad=8)
+            ax8.set_ylabel("Nb tubes")
+            ax8.set_xlabel("Heure de la journée")
+            ax8.grid(True, alpha=0.3, linestyle="--", axis="y")
+
+            heures = sorted(arrivees_data.keys())
+            valeurs = [arrivees_data[h] for h in heures]
+            bars = ax8.bar(heures, valeurs, color="#3498db", alpha=0.85,
+                           edgecolor="white", width=0.7)
+            # Annoter chaque barre
+            for bar, v in zip(bars, valeurs):
+                ax8.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                         str(v), ha="center", va="bottom",
+                         fontsize=8, color="#333333")
+            # Étiquettes h00, h01 …
+            ax8.set_xticks(heures)
+            ax8.set_xticklabels([f"{h:02d}h" for h in heures], rotation=45, ha="right")
 
         self.fig.tight_layout(pad=1.8, h_pad=2.5, w_pad=2.0)
         self.canvas_mpl.draw()
