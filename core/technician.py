@@ -45,6 +45,7 @@ class TechnicianState:
         self.mecontentement = 0.0       # [0.0 – 1.0] état cumulatif
         self.jours_consecutifs_surcharge = 0    # nombre de jours consécutifs en surcharge
         self._tubes_livres_debut_jour = 0       # snapshot tubes livrés au début du jour        self.taux_recuperation_nuit = 0.15      # réduction du mécontentement par nuit de repos (0–1)        self.en_arret_maladie = False           # le tech est en arrêt maladie
+        self.en_service = True                  # False quand hors plage horaire
         self.historique_bienetre = []           # [(jour, mecontentement), ...] pour les stats
 
     # ------------------------------------------------------------------

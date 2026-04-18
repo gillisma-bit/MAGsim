@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, colorchooser
+from ui.tab_horaires import FenetreHoraires
 
 class TabConfig:
     def __init__(self, parent, config_manager):
@@ -61,6 +62,15 @@ class TabConfig:
                   foreground="gray", font=("Segoe UI", 8)).grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
 
+        # Horaires du personnel
+        f_horaires = ttk.LabelFrame(self.edit_frame, text="🗓️ Horaires du personnel", padding=8)
+        f_horaires.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            f_horaires,
+            text="📅  Gérer les horaires",
+            command=self._ouvrir_horaires,
+        ).pack(fill="x", pady=2)
+
         ttk.Separator(self.edit_frame).pack(fill="x", pady=15)
 
         # GESTION DES PROCÉDURES
@@ -95,6 +105,9 @@ class TabConfig:
             self.config_manager.data["personnel"] = {}
         self.config_manager.data["personnel"]["metres_par_case"] = mpc
         self.config_manager.sauvegarder()
+
+    def _ouvrir_horaires(self):
+        FenetreHoraires(self.parent, self.config_manager)
 
     def set_mode(self, mode):
         self.mode = mode

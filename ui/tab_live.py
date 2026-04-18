@@ -893,6 +893,46 @@ class TabLive:
 
             yield self.env.timeout(0.5)
 
+    # ──────────────────────────────────────────────────────────────────────
+    def _tech_est_en_service(self, tech):
+        """Retourne True si le technicien est dans sa plage horaire configurée.
+
+        Règles :
+          - Aucun horaire défini → toujours en service.
+          - actif = false → jamais en service.
+          - Quart de nuit : heure_debut > heure_fin (ex: 16h → 8h).
+          - Calcul du jour de semaine basé sur jour_debut_simulation de la config.
+        """
+        horaires = self.config_manager.data.get("horaires", {})
+        h_tech = horaires.get(tech.nom, {})
+
+        if not h_tech:
+            return True  # pas de contrainte → disponible
+
+        if not h_tech.get("actif", True):
+            return False
+
+        personnel = self.config_manager.data.get("personnel", {})
+        jour_debut_sim = int(personnel.get("jour_debut_simulation", 0))  # 0=Lundi
+
+        t = self.env.now
+        jour_absolu = int(t / 1440)                          # 0, 1, 2 …
+        jour_semaine = (jour_debut_sim + jour_absolu) % 7    # 0=L … 6=D
+
+        jours_actifs = h_tech.get("jours", list(range(5)))
+        if jour_semaine not in jours_actifs:
+            return False
+
+        # Heure actuelle dans la journée (décimale, 0–24)
+        heure_actuelle = (self.heure_debut_sim + (t % 1440) / 60.0) % 24.0
+        h_debut = float(h_tech.get("heure_debut", 7))
+        h_fin   = float(h_tech.get("heure_fin", 15))
+
+        # Quart traversant minuit (ex: 16h→8h)
+        if h_debut > h_fin:
+            return heure_actuelle >= h_debut or heure_actuelle < h_fin
+        else:
+            return h_debut <= heure_actuelle < h_fin
 
     def technician_process(self, tech):
         """Processus d'un technicien : collecte tous les tubes disponibles, vérifie la capacité des files, dépose et récupère."""
@@ -901,6 +941,15 @@ class TabLive:
         sorties = [m for m in machines.values() if m["type"] == "SORTIE"]
 
         while self.running:
+
+            # --- Vérification disponibilité : horaire + arrêt maladie ---
+            en_service = (not tech.en_arret_maladie) and self._tech_est_en_service(tech)
+            tech.en_service = en_service
+            if not en_service:
+                if not self.headless:
+                    self._update_tech_sprite_bienetre(tech)
+                yield self.env.timeout(15)   # re-vérifie toutes les 15 min sim
+                continue
 
             # --- Priorité 1 : tubes ayant fini un traitement, à récupérer ---
             # Claim immédiat : vider output_queues AVANT de yielder pour éviter
@@ -1204,6 +1253,13 @@ class TabLive:
                 self.canvas.itemconfig(tech.canvas_id, fill="#bdc3c7", outline="#7f8c8d", width=3)
             if tech.label_bienetre_id:
                 self.canvas.itemconfig(tech.label_bienetre_id, text="🏥")
+            return
+        # Hors service (plage horaire non active) → icône repos
+        if not getattr(tech, 'en_service', True):
+            if tech.canvas_id:
+                self.canvas.itemconfig(tech.canvas_id, fill="#d5d8dc", outline="#95a5a6", width=2)
+            if tech.label_bienetre_id:
+                self.canvas.itemconfig(tech.label_bienetre_id, text="💤")
             return
         if tech.canvas_id:
             self.canvas.itemconfig(tech.canvas_id, fill=tech.color)
