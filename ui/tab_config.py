@@ -46,6 +46,21 @@ class TabConfig:
         ttk.Button(frame_modes, text="⬛ Mur (Noir)", command=lambda: self.set_mode("WALL")).pack(fill="x", pady=2)
         ttk.Button(frame_modes, text="🧹 Gomme", command=lambda: self.set_mode("FLOOR")).pack(fill="x", pady=2)
 
+        # Échelle du plan
+        f_echelle = ttk.LabelFrame(self.edit_frame, text="📏 Échelle du plan", padding=8)
+        f_echelle.pack(fill="x", pady=(8, 0))
+        ttk.Label(f_echelle, text="1 case =", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w")
+        self.ent_mpc = ttk.Entry(f_echelle, width=6)
+        ent_mpc_val = self.config_manager.data.get("personnel", {}).get("metres_par_case", 3.0)
+        self.ent_mpc.insert(0, ent_mpc_val)
+        self.ent_mpc.grid(row=0, column=1, padx=4)
+        ttk.Label(f_echelle, text="mètres", font=("Segoe UI", 9)).grid(row=0, column=2, sticky="w")
+        ttk.Button(f_echelle, text="✓ Appliquer",
+                   command=self._sauver_echelle).grid(row=0, column=3, padx=(6, 0))
+        ttk.Label(f_echelle, text="(1 case = 50 px)",
+                  foreground="gray", font=("Segoe UI", 8)).grid(
+            row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
+
         ttk.Separator(self.edit_frame).pack(fill="x", pady=15)
 
         # GESTION DES PROCÉDURES
@@ -70,6 +85,16 @@ class TabConfig:
                                    bg="#ec4a38", fg="white", font=("Segoe UI", 9, "bold"),
                                    command=self.supprimer_selection)
         self.btn_suppr.pack(fill="x", pady=5)
+
+    def _sauver_echelle(self):
+        try:
+            mpc = max(0.1, float(self.ent_mpc.get()))
+        except ValueError:
+            return
+        if "personnel" not in self.config_manager.data:
+            self.config_manager.data["personnel"] = {}
+        self.config_manager.data["personnel"]["metres_par_case"] = mpc
+        self.config_manager.sauvegarder()
 
     def set_mode(self, mode):
         self.mode = mode
@@ -517,30 +542,22 @@ class TabConfig:
             ttk.Label(f_pers, text="Déclenche la montée de cadence des techs",
                       foreground="gray").grid(row=1, column=2, padx=6)
 
-            ttk.Label(f_pers, text="Échelle du plan (mètres par case) :").grid(
-                row=2, column=0, sticky="w", pady=3)
-            ent_mpc = ttk.Entry(f_pers, width=8)
-            ent_mpc.insert(0, personnel.get("metres_par_case", 3.0))
-            ent_mpc.grid(row=2, column=1, padx=5)
-            ttk.Label(f_pers, text="1 case = 50 px — ajuster pour calibrer les distances",
-                      foreground="gray").grid(row=2, column=2, padx=6)
-
             # Quarts : tableau lecture / info (édition complète dans un futur dialog dédié)
             quarts = personnel.get("quarts", [])
             if quarts:
                 ttk.Label(f_pers, text="Quarts définis :").grid(
-                    row=3, column=0, sticky="nw", pady=(6, 2))
+                    row=2, column=0, sticky="nw", pady=(6, 2))
                 txt_quarts = ""
                 for q in quarts:
                     garde_tag = "  [GARDE]" if q.get("garde") else ""
                     techids = ", ".join(q.get("tech_ids", []))
                     txt_quarts += f"• {q['nom']} {q['heure_debut']}h–{q['heure_fin']}h : {techids}{garde_tag}\n"
                 ttk.Label(f_pers, text=txt_quarts.strip(), foreground="#555",
-                          font=("Segoe UI", 9)).grid(row=3, column=1, columnspan=2,
+                          font=("Segoe UI", 9)).grid(row=2, column=1, columnspan=2,
                                                        sticky="w", padx=5)
             ttk.Label(f_pers, text="(Édition complète des quarts : menu Configuration → Personnel)",
                       foreground="#aaa", font=("Segoe UI", 8, "italic")).grid(
-                row=4, column=0, columnspan=3, sticky="w", pady=(2, 0))
+                row=3, column=0, columnspan=3, sticky="w", pady=(2, 0))
 
             # ── Aperçu indicatif ─────────────────────────────────────────────────
             f_preview = ttk.LabelFrame(popup, text="🔍 Aperçu (expérience 3 · âge 35 · sans fatigue · 9h)",
@@ -605,10 +622,8 @@ class TabConfig:
                         self.config_manager.data["personnel"] = {}
                     cap_jour = max(1, int(ent_cap_jour.get()))
                     seuil_acc = max(1, int(ent_seuil_acc.get()))
-                    mpc = max(0.1, float(ent_mpc.get()))
                     self.config_manager.data["personnel"]["capacite_journaliere_normale"] = cap_jour
                     self.config_manager.data["personnel"]["seuil_accumulation_alerte"] = seuil_acc
-                    self.config_manager.data["personnel"]["metres_par_case"] = mpc
                     self.config_manager.sauvegarder()
                     popup.destroy()
                 except ValueError:
