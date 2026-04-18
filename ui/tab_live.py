@@ -248,16 +248,19 @@ class TabLive:
             return False
         return True
 
-    def lancer_simulation_headless(self, duree_sim, on_progress=None, on_complete=None):
+    def lancer_simulation_headless(self, duree_sim, on_progress=None, on_complete=None, seed=None):
         """Lance une simulation accélérée (sans animation) dans un thread séparé.
         - duree_sim   : durée en unités SimPy
         - on_progress : callback(t, total) appelé toutes les 5 % de progression
         - on_complete : callback() appelé à la fin (depuis le thread — utiliser .after())
+        - seed        : graine random optionnelle (reproductibilité / tests)
         """
         import threading
 
         def _run():
             try:
+                if seed is not None:
+                    random.seed(seed)
                 self.headless = True
                 self.running = True
 
@@ -744,17 +747,29 @@ class TabLive:
                 if jour_actuel > 0:
                     personnel_cfg = self.config_manager.data.get("personnel", {})
                     cap_jour = float(personnel_cfg.get("capacite_journaliere_normale", 150))
+                    import random as _rnd
                     for tech in self.technicians:
                         tech._distance_debut_jour_px = tech.distance_parcourue_px
                         # Mécontentement : comparaison tubes livrés hier vs capacité normale
                         tubes_jour = tech.tubes_livres_session - tech._tubes_livres_debut_jour
                         tech.mettre_a_jour_mecontentement(tubes_jour, cap_jour)
                         tech._tubes_livres_debut_jour = tech.tubes_livres_session
-                        # Risque arrêt maladie : tirage aléatoire journalier
-                        import random as _rnd
-                        risque = tech.calculer_risque_arret_maladie()
-                        if risque > 0 and _rnd.random() < risque:
-                            tech.en_arret_maladie = True
+                        # Récupération nocturne de la fatigue physique
+                        tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.40)
+                        if tech.en_arret_maladie:
+                            # Congé maladie : récupération accélérée du mécontentement
+                            tech.mecontentement = max(0.0, tech.mecontentement - 0.10)
+                            tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.20)
+                            # Retour au travail : probabilité inversement proportionnelle au mécontentement
+                            proba_retour = max(0.0, 0.60 - tech.mecontentement * 0.80)
+                            if proba_retour > 0 and _rnd.random() < proba_retour:
+                                tech.en_arret_maladie = False
+                                tech.jours_consecutifs_surcharge = 0
+                        else:
+                            # Risque arrêt maladie : tirage aléatoire journalier
+                            risque = tech.calculer_risque_arret_maladie()
+                            if risque > 0 and _rnd.random() < risque:
+                                tech.en_arret_maladie = True
                         self._update_tech_sprite_bienetre(tech)
             for idx, tech in enumerate(self.technicians):
                 k = tech.nom if tech.nom else f"Tech {idx + 1}"
