@@ -273,13 +273,13 @@ class TabConfig:
             f_fiab = ttk.LabelFrame(popup, text="🔧 Fiabilité & pannes (loi exponentielle)", padding=10)
             f_fiab.pack(fill="x", padx=20, pady=(0, 5))
 
-            ttk.Label(f_fiab, text="TMEP — Temps moyen entre pannes (min) :").grid(row=0, column=0, sticky="w")
+            ttk.Label(f_fiab, text="TMEP — Temps moyen entre pannes (h) :").grid(row=0, column=0, sticky="w")
             ent_tmep = ttk.Entry(f_fiab, width=10)
             ent_tmep.insert(0, m_data.get("tmep", 0))
             ent_tmep.grid(row=0, column=1, padx=5, pady=2)
             ttk.Label(f_fiab, text="0 = pas de pannes", foreground="gray").grid(row=0, column=2, padx=4)
 
-            ttk.Label(f_fiab, text="TMR — Temps moyen de réparation (min) :").grid(row=1, column=0, sticky="w")
+            ttk.Label(f_fiab, text="TMR — Temps moyen de réparation (h) :").grid(row=1, column=0, sticky="w")
             ent_tmr = ttk.Entry(f_fiab, width=10)
             ent_tmr.insert(0, m_data.get("tmr", 0))
             ent_tmr.grid(row=1, column=1, padx=5, pady=2)
@@ -289,7 +289,7 @@ class TabConfig:
             if _tmep_v > 0 and _tmr_v > 0:
                 _dispo = _tmep_v / (_tmep_v + _tmr_v) * 100
                 _c = "#27ae60" if _dispo >= 90 else "#e67e22" if _dispo >= 75 else "#e74c3c"
-                _txt = f"→ Disponibilité théorique : {_dispo:.1f} %   (TMEP={_tmep_v:.0f} min / TMR={_tmr_v:.0f} min)"
+                _txt = f"→ Disponibilité théorique : {_dispo:.1f} %   (TMEP={_tmep_v:.1f} h / TMR={_tmr_v:.1f} h)"
             else:
                 _c, _txt = "#27ae60", "→ Disponibilité théorique : 100 % (pannes désactivées)"
             ttk.Label(f_fiab, text=_txt, foreground=_c, font=("Segoe UI", 9, "bold")).grid(

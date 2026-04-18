@@ -1212,17 +1212,22 @@ class TabLive:
     def machine_breakdown_process(self, nom_machine, machine):
         """Processus indépendant modélisant les pannes par loi exponentielle (TMEP/TMR).
 
-        TMEP (Temps Moyen Entre Pannes) et TMR (Temps Moyen de Réparation) sont en minutes.
+        TMEP (Temps Moyen Entre Pannes) et TMR (Temps Moyen de Réparation) sont en HEURES.
         Taux de disponibilité théorique : A = TMEP / (TMEP + TMR).
+        Les valeurs sont converties en minutes (×60) pour SimPy (1 unité = 1 min).
         """
         tmep = machine.get("tmep", 0)
         tmr  = machine.get("tmr",  0)
         if not tmep or not tmr or tmep <= 0 or tmr <= 0:
             return
 
+        # Conversion heures → minutes SimPy
+        tmep_min = tmep * 60
+        tmr_min  = tmr  * 60
+
         while self.running:
             # Attendre le prochain incident (distribution exponentielle)
-            delai_avant_panne = random.expovariate(1.0 / tmep) / 10
+            delai_avant_panne = random.expovariate(1.0 / tmep_min)
             yield self.env.timeout(delai_avant_panne)
             if not self.running:
                 break
@@ -1241,7 +1246,7 @@ class TabLive:
                     self.canvas.itemconfig(self.machine_labels[nom_machine], text="⚠ EN PANNE")
 
             # Attendre la durée de réparation (distribution exponentielle)
-            duree_reparation = random.expovariate(1.0 / tmr) / 10
+            duree_reparation = random.expovariate(1.0 / tmr_min)
             yield self.env.timeout(duree_reparation)
             if not self.running:
                 break
