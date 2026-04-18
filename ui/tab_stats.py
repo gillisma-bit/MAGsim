@@ -87,12 +87,12 @@ class TabStats:
         fast = ttk.LabelFrame(self.parent, text=" ⚡ Simulation accélérée (sans animation) ")
         fast.pack(fill="x", padx=12, pady=(2, 4))
 
-        ttk.Label(fast, text="Durée (unités de simulation) :").pack(side=tk.LEFT, padx=(8, 2), pady=4)
-        self.ent_duree = ttk.Entry(fast, width=8)
-        self.ent_duree.insert(0, "2880")
+        ttk.Label(fast, text="Durée (jours) :").pack(side=tk.LEFT, padx=(8, 2), pady=4)
+        self.ent_duree = ttk.Entry(fast, width=6)
+        self.ent_duree.insert(0, "2")
         self.ent_duree.pack(side=tk.LEFT, padx=2)
 
-        ttk.Label(fast, text="  ← ex : 480 = 8h de labo  |  2880 = 2 journées  |  1 unité = 1 min",
+        ttk.Label(fast, text="  ← ex : 0.5 = demi-journée  |  1 = 1 jour (1440 min)  |  7 = semaine",
                   font=("Segoe UI", 9), foreground="#777").pack(side=tk.LEFT, padx=4)
 
         self.btn_fast = ttk.Button(fast, text="▶ Lancer",
@@ -326,8 +326,9 @@ class TabStats:
             ax3.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
         # ── Graphique temps moyen de transit ───────────────────────────
-        transit_avg  = hist.get("transit_time_avg", [])
-        transit_roll = hist.get("transit_time_rolling", [])
+        transit_avg     = hist.get("transit_time_avg", [])
+        transit_roll    = hist.get("transit_time_rolling", [])
+        transit_pending = hist.get("transit_time_pending_max", [])
 
         def _filter_none(t_list, v_list):
             pairs = [(t, v) for t, v in zip(t_list, v_list) if v is not None]
@@ -338,7 +339,7 @@ class TabStats:
         if show_transit:
             ax4 = _next_ax()
             ax4.set_facecolor("#ffffff")
-            ax4.set_title("Temps de transit — de l'arrivée à la sortie",
+            ax4.set_title("Temps de transit — tubes sortis + tubes en attente",
                           fontsize=11, fontweight="bold", pad=8)
             ax4.set_ylabel("Durée (min)")
             ax4.set_xlabel("Temps écoulé")
@@ -347,22 +348,34 @@ class TabStats:
             ax4.grid(True, alpha=0.3, linestyle="--")
 
             has_data = any(v is not None for v in transit_avg)
-            if has_data:
-                t_avg, v_avg = _filter_none(times[:len(transit_avg)], transit_avg)
-                t_roll, v_roll = _filter_none(times[:len(transit_roll)], transit_roll)
-                ax4.plot(list(t_avg), list(v_avg),
-                         color="#8e44ad", linewidth=1.5, alpha=0.5,
-                         linestyle="--", label="Moyenne cumulative")
-                ax4.plot(list(t_roll), list(v_roll),
-                         color="#8e44ad", linewidth=2.5, alpha=0.95,
-                         label="Glissante (20 derniers)")
-                last_roll = next((v for v in reversed(transit_roll) if v is not None), None)
-                if last_roll is not None:
-                    ax4.axhline(y=last_roll, color="#8e44ad", linestyle=":",
-                                alpha=0.45, linewidth=1.2)
-                    ax4.text(times[-1] if times else 0, last_roll,
-                             f"  {_fmt_duree(last_roll)}",
-                             va="center", fontsize=9, color="#8e44ad")
+            has_pending = any(v is not None for v in transit_pending)
+            if has_data or has_pending:
+                if has_data:
+                    t_avg, v_avg = _filter_none(times[:len(transit_avg)], transit_avg)
+                    t_roll, v_roll = _filter_none(times[:len(transit_roll)], transit_roll)
+                    ax4.plot(list(t_avg), list(v_avg),
+                             color="#8e44ad", linewidth=1.5, alpha=0.5,
+                             linestyle="--", label="Moyenne cumulative (sortis)")
+                    ax4.plot(list(t_roll), list(v_roll),
+                             color="#8e44ad", linewidth=2.5, alpha=0.95,
+                             label="Glissante 20 derniers (sortis)")
+                    last_roll = next((v for v in reversed(transit_roll) if v is not None), None)
+                    if last_roll is not None:
+                        ax4.axhline(y=last_roll, color="#8e44ad", linestyle=":",
+                                    alpha=0.45, linewidth=1.2)
+                        ax4.text(times[-1] if times else 0, last_roll,
+                                 f"  {_fmt_duree(last_roll)}",
+                                 va="center", fontsize=9, color="#8e44ad")
+                if has_pending:
+                    t_pend, v_pend = _filter_none(times[:len(transit_pending)], transit_pending)
+                    ax4.plot(list(t_pend), list(v_pend),
+                             color="#e74c3c", linewidth=2.0, alpha=0.85,
+                             linestyle="-", label="Âge max tube en attente ⚠")
+                    last_pend = next((v for v in reversed(transit_pending) if v is not None), None)
+                    if last_pend is not None:
+                        ax4.text(times[-1] if times else 0, last_pend,
+                                 f"  {_fmt_duree(last_pend)}",
+                                 va="center", fontsize=9, color="#e74c3c")
             else:
                 ax4.text(0.5, 0.5,
                          "En attente — aucun tube n'a encore atteint la SORTIE.\n"
@@ -639,9 +652,12 @@ class TabStats:
             return
 
         try:
-            duree = float(self.ent_duree.get())
+            duree_jours = float(self.ent_duree.get())
+            if duree_jours <= 0:
+                raise ValueError
+            duree = duree_jours * 1440  # conversion jours → minutes SimPy
         except ValueError:
-            self.lbl_fast_status.config(text="Durée invalide.")
+            self.lbl_fast_status.config(text="Durée invalide (ex : 1, 2, 0.5).")
             return
 
         self.btn_fast.config(state="disabled")

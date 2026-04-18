@@ -35,6 +35,7 @@ class TabLive:
         # Collecte des métriques pour l'onglet goulots
         self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                               "transit_time_avg": [], "transit_time_rolling": [],
+                              "transit_time_pending_max": [],
                               "rejetes": [], "degrades": [], "pannes": {},
                               "distances_tech": {}, "bienetre": {},
                               "arrivees_par_heure": {}}
@@ -276,6 +277,7 @@ class TabLive:
                 self.machine_labels_output = {}
                 self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                                       "transit_time_avg": [], "transit_time_rolling": [],
+                                      "transit_time_pending_max": [],
                                       "rejetes": [], "degrades": [], "pannes": {},
                                       "distances_tech": {}, "bienetre": {},
                                       "arrivees_par_heure": {}}
@@ -432,6 +434,7 @@ class TabLive:
             self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
                                   "bienetre": {},
                                   "transit_time_avg": [], "transit_time_rolling": [],
+                                  "transit_time_pending_max": [],
                                   "rejetes": [], "degrades": [], "pannes": {},
                                   "distances_tech": {},
                                   "arrivees_par_heure": {}}
@@ -726,6 +729,18 @@ class TabLive:
                 rolling_transit = None
             self.stats_history["transit_time_avg"].append(avg_transit)
             self.stats_history["transit_time_rolling"].append(rolling_transit)
+
+            # Âge du plus vieux tube encore en attente dans le système
+            # (entrée + files machine + sorties de machine non encore récupérées)
+            # → monte pendant un blocage même si aucun tube ne sort
+            all_pending = list(self.entry_queue)
+            for _q in self.machine_queues.values():
+                all_pending.extend(_q)
+            for _q in self.output_queues.values():
+                all_pending.extend(_q)
+            ages_en_attente = [t - tube["arrivee"] for tube in all_pending if "arrivee" in tube]
+            pending_max = max(ages_en_attente) if ages_en_attente else None
+            self.stats_history["transit_time_pending_max"].append(pending_max)
 
             # Compteurs d'erreurs (valeurs cumulatives, parallèles à "time")
             self.stats_history["rejetes"].append(self.tubes_rejetes)

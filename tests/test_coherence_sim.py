@@ -176,6 +176,7 @@ def _init_sim(tab, seed):
     tab.stats_history = {
         "time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
         "transit_time_avg": [], "transit_time_rolling": [],
+        "transit_time_pending_max": [],
         "rejetes": [], "degrades": [], "pannes": {},
         "distances_tech": {}, "bienetre": {}, "arrivees_par_heure": {},
     }
