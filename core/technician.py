@@ -44,8 +44,7 @@ class TechnicianState:
         # ── Bien-être / mécontentement ────────────────────────────────────────
         self.mecontentement = 0.0       # [0.0 – 1.0] état cumulatif
         self.jours_consecutifs_surcharge = 0    # nombre de jours consécutifs en surcharge
-        self._tubes_livres_debut_jour = 0       # snapshot tubes livrés au début du jour
-        self.en_arret_maladie = False           # le tech est en arrêt maladie
+        self._tubes_livres_debut_jour = 0       # snapshot tubes livrés au début du jour        self.taux_recuperation_nuit = 0.15      # réduction du mécontentement par nuit de repos (0–1)        self.en_arret_maladie = False           # le tech est en arrêt maladie
         self.historique_bienetre = []           # [(jour, mecontentement), ...] pour les stats
 
     # ------------------------------------------------------------------
@@ -134,19 +133,20 @@ class TechnicianState:
     def mettre_a_jour_mecontentement(self, tubes_livres_jour, capacite_journaliere_normale):
         """Met à jour le mécontentement en fin de journée.
 
-        Logique :
-        - charge_effective = tubes_livres_jour / capacite_journaliere_normale
-        - Si charge > seuil_charge_fatigue → montée du mécontentement proportionnelle
-          à l'excès de charge × facteur d'accumulation (jours consécutifs amplificateur)
-        - Sinon → récupération partielle
-        - La fatigue physique contribue également au mécontentement
+        1. Récupération nocturne : toujours appliquée (taux_recuperation_nuit % du niveau courant).
+        2. Surcharge du jour : si charge > seuil, ajout proportionnel à l'excès.
+        3. Jours consécutifs de surcharge amplificateur de montée.
 
-        Le risque d'arrêt maladie augmente exponentiellement avec le mécontentement
-        et les jours consécutifs de surcharge.
+        Une nuit de repos de 15% signifie qu'il faut plus de 5 jours de surcharge continue
+        pour atteindre le burn-out, et qu'un week-end de repos suffit à redéscendre significativement.
         """
         if capacite_journaliere_normale <= 0:
             return
         charge = tubes_livres_jour / capacite_journaliere_normale
+
+        # 1. Récupération nocturne (appliquée chaque soir, quelle que soit la charge du jour)
+        recuperation_nuit = self.taux_recuperation_nuit * self.mecontentement
+        self.mecontentement = max(0.0, self.mecontentement - recuperation_nuit)
 
         if charge > self.seuil_charge_fatigue:
             exces = charge - self.seuil_charge_fatigue
@@ -158,9 +158,9 @@ class TechnicianState:
             self.mecontentement = min(1.0, self.mecontentement + delta)
             self.jours_consecutifs_surcharge += 1
         else:
-            # Récupération : plus lente selon l'état actuel
-            recuperation = 0.04 * (1.0 - self.mecontentement * 0.5)
-            self.mecontentement = max(0.0, self.mecontentement - recuperation)
+            # Journée normale : récupération supplémentaire légère (bonus si pas en surcharge)
+            bonus = 0.03 * (1.0 - self.mecontentement)
+            self.mecontentement = max(0.0, self.mecontentement - bonus)
             self.jours_consecutifs_surcharge = 0
 
         self.historique_bienetre.append((self.jours_consecutifs_surcharge, round(self.mecontentement, 3)))

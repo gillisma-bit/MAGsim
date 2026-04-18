@@ -513,12 +513,21 @@ class TabConfig:
             ttk.Label(f_t, text="Incrément par tube livré en surcharge (ex. 0.01)",
                       foreground="gray").grid(row=5, column=2, padx=6)
 
+            # Taux de récupération nocturne
+            ttk.Label(f_t, text="Récupération nocturne (%) :").grid(
+                row=6, column=0, sticky="w", pady=3)
+            ent_recup = ttk.Entry(f_t, width=8)
+            ent_recup.insert(0, int(float(m_data.get("taux_recuperation_nuit", 0.15)) * 100))
+            ent_recup.grid(row=6, column=1, padx=5)
+            ttk.Label(f_t, text="% du mécontentement effacé chaque nuit de repos (déf. 15 %)",
+                      foreground="gray").grid(row=6, column=2, padx=6)
+
             # Capacité max tubes portés
             ttk.Label(f_t, text="Capacité max (tubes portés simultanément) :").grid(
-                row=6, column=0, sticky="w", pady=3)
+                row=7, column=0, sticky="w", pady=3)
             ent_cap = ttk.Entry(f_t, width=8)
             ent_cap.insert(0, m_data.get("capacite_max_tubes", 10))
-            ent_cap.grid(row=6, column=1, padx=5)
+            ent_cap.grid(row=7, column=1, padx=5)
 
             # ── Section personnel global (charge cible + quarts) ─────────────────
             f_pers = ttk.LabelFrame(popup, text="🗓️ Quarts de travail & charge", padding=12)
@@ -609,6 +618,7 @@ class TabConfig:
                     pct = float(ent_pct.get())
                     seuil = float(ent_seuil.get()) / 100.0
                     taux = float(ent_taux.get())
+                    recup_nuit = max(0.0, min(1.0, float(ent_recup.get()) / 100.0))
                     cap_max = max(1, int(ent_cap.get()))
                     m_data["nom"] = nom
                     m_data["experience"] = exp
@@ -616,6 +626,7 @@ class TabConfig:
                     m_data["pct_erreur_tech"] = pct
                     m_data["seuil_charge_fatigue"] = seuil
                     m_data["taux_montee_fatigue"] = taux
+                    m_data["taux_recuperation_nuit"] = recup_nuit
                     m_data["capacite_max_tubes"] = cap_max
                     # Sauvegarder les paramètres personnel globaux
                     if "personnel" not in self.config_manager.data:

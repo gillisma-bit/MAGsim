@@ -310,6 +310,7 @@ class TabLive:
                     tech.age            = int(office.get("age", 35))
                     tech.seuil_charge_fatigue  = float(office.get("seuil_charge_fatigue", 0.70))
                     tech.taux_montee_fatigue   = float(office.get("taux_montee_fatigue", 0.01))
+                    tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                     tech.capacite_max_tubes    = int(office.get("capacite_max_tubes", 10))
                     self.technicians.append(tech)
 
@@ -400,6 +401,7 @@ class TabLive:
                 tech.age            = int(office.get("age", 35))
                 tech.seuil_charge_fatigue  = float(office.get("seuil_charge_fatigue", 0.70))
                 tech.taux_montee_fatigue   = float(office.get("taux_montee_fatigue", 0.01))
+                tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                 tech.capacite_max_tubes    = int(office.get("capacite_max_tubes", 10))
                 tech.canvas_id = self.canvas.create_oval(
                     tech.x-10, tech.y-10, tech.x+10, tech.y+10,
