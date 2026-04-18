@@ -748,6 +748,10 @@ class TabLive:
                     personnel_cfg = self.config_manager.data.get("personnel", {})
                     cap_jour = float(personnel_cfg.get("capacite_journaliere_normale", 150))
                     import random as _rnd
+                    horaires_cfg = self.config_manager.data.get("horaires", {})
+                    jour_debut_sim = int(self.config_manager.data.get("personnel", {}).get("jour_debut_simulation", 0))
+                    # Le jour qui vient de s'écouler est jour_actuel - 1
+                    jour_hier_semaine = (jour_debut_sim + jour_actuel - 1) % 7
                     for tech in self.technicians:
                         tech._distance_debut_jour_px = tech.distance_parcourue_px
                         # Mécontentement : comparaison tubes livrés hier vs capacité normale
@@ -765,11 +769,25 @@ class TabLive:
                             if proba_retour > 0 and _rnd.random() < proba_retour:
                                 tech.en_arret_maladie = False
                                 tech.jours_consecutifs_surcharge = 0
+                            tech.jours_conges_consecutifs = 0  # congé maladie ≠ repos planifié
                         else:
-                            # Risque arrêt maladie : tirage aléatoire journalier
-                            risque = tech.calculer_risque_arret_maladie()
-                            if risque > 0 and _rnd.random() < risque:
-                                tech.en_arret_maladie = True
+                            # Vérifier si hier était un jour de repos planifié
+                            tech_horaire = horaires_cfg.get(tech.nom, {})
+                            jours_travail = tech_horaire.get("jours", list(range(7)))
+                            est_conge = jour_hier_semaine not in jours_travail
+                            if est_conge:
+                                tech.jours_conges_consecutifs += 1
+                                # Bonus à partir du 2e jour de repos consécutif (ex: week-end)
+                                if tech.jours_conges_consecutifs >= 2:
+                                    bonus = 0.08 + (tech.jours_conges_consecutifs - 2) * 0.03
+                                    tech.mecontentement = max(0.0, tech.mecontentement - bonus)
+                                    tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.15)
+                            else:
+                                tech.jours_conges_consecutifs = 0
+                                # Risque arrêt maladie : tirage aléatoire journalier
+                                risque = tech.calculer_risque_arret_maladie()
+                                if risque > 0 and _rnd.random() < risque:
+                                    tech.en_arret_maladie = True
                         self._update_tech_sprite_bienetre(tech)
             for idx, tech in enumerate(self.technicians):
                 k = tech.nom if tech.nom else f"Tech {idx + 1}"
