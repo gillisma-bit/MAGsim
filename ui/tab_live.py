@@ -844,6 +844,19 @@ class TabLive:
                     self.stats_history["bienetre"][k] = {}
                 self.stats_history["bienetre"][k][jour_actuel] = round(tech.mecontentement, 3)
 
+            # ── Watchdog : forcer un batch si un tube est bloqué trop longtemps ──
+            # Cas typique : arrivées lentes → capacite jamais atteinte → machine jamais déclenchée.
+            # Paramètre JSON par machine : "timeout_batch" (minutes, défaut 60).
+            for nom_wm, conf_wm in machines.items():
+                if conf_wm.get("type") in ("ENTREE", "SORTIE", "TECH_OFFICE"):
+                    continue
+                q_wm = self.machine_queues.get(nom_wm, [])
+                if q_wm and nom_wm not in self.blinking_machines:
+                    oldest_age = t - q_wm[0].get("arrivee", t)
+                    timeout_batch = conf_wm.get("timeout_batch", 60)
+                    if oldest_age > timeout_batch:
+                        self.env.process(self.traiter_batch_machine(nom_wm, conf_wm))
+
             yield self.env.timeout(interval)
 
     def tube_generation(self):
@@ -1522,17 +1535,8 @@ class TabLive:
         # Arrêter le clignotement
         self.blinking_machines.discard(nom_machine)
 
-        # Relancer automatiquement s'il reste des tubes en attente,
-        # mais seulement si la condition capacité/urgence est remplie
+        # Relancer automatiquement si des tubes restent — toujours, sans condition de seuil.
+        # La condition seuil/file_max est réservée au déclenchement INITIAL depuis un dépôt tech.
         queue_restante = self.machine_queues.get(nom_machine, [])
         if queue_restante:
-            seuil = machine.get("seuil", 1)
-            file_max = machine.get("file_max", machine.get("capacite", 4))
-            has_urgent = any(t.get("urgent") for t in queue_restante)
-            should_trigger = (
-                len(queue_restante) >= capacite
-                or (has_urgent and len(queue_restante) >= seuil)
-                or len(queue_restante) >= file_max
-            )
-            if should_trigger:
-                self.env.process(self.traiter_batch_machine(nom_machine, machine))
+            self.env.process(self.traiter_batch_machine(nom_machine, machine))
