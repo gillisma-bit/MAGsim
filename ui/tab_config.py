@@ -517,22 +517,30 @@ class TabConfig:
             ttk.Label(f_pers, text="Déclenche la montée de cadence des techs",
                       foreground="gray").grid(row=1, column=2, padx=6)
 
+            ttk.Label(f_pers, text="Échelle du plan (mètres par case) :").grid(
+                row=2, column=0, sticky="w", pady=3)
+            ent_mpc = ttk.Entry(f_pers, width=8)
+            ent_mpc.insert(0, personnel.get("metres_par_case", 3.0))
+            ent_mpc.grid(row=2, column=1, padx=5)
+            ttk.Label(f_pers, text="1 case = 50 px — ajuster pour calibrer les distances",
+                      foreground="gray").grid(row=2, column=2, padx=6)
+
             # Quarts : tableau lecture / info (édition complète dans un futur dialog dédié)
             quarts = personnel.get("quarts", [])
             if quarts:
                 ttk.Label(f_pers, text="Quarts définis :").grid(
-                    row=2, column=0, sticky="nw", pady=(6, 2))
+                    row=3, column=0, sticky="nw", pady=(6, 2))
                 txt_quarts = ""
                 for q in quarts:
                     garde_tag = "  [GARDE]" if q.get("garde") else ""
                     techids = ", ".join(q.get("tech_ids", []))
                     txt_quarts += f"• {q['nom']} {q['heure_debut']}h–{q['heure_fin']}h : {techids}{garde_tag}\n"
                 ttk.Label(f_pers, text=txt_quarts.strip(), foreground="#555",
-                          font=("Segoe UI", 9)).grid(row=2, column=1, columnspan=2,
+                          font=("Segoe UI", 9)).grid(row=3, column=1, columnspan=2,
                                                        sticky="w", padx=5)
             ttk.Label(f_pers, text="(Édition complète des quarts : menu Configuration → Personnel)",
                       foreground="#aaa", font=("Segoe UI", 8, "italic")).grid(
-                row=3, column=0, columnspan=3, sticky="w", pady=(2, 0))
+                row=4, column=0, columnspan=3, sticky="w", pady=(2, 0))
 
             # ── Aperçu indicatif ─────────────────────────────────────────────────
             f_preview = ttk.LabelFrame(popup, text="🔍 Aperçu (expérience 3 · âge 35 · sans fatigue · 9h)",
@@ -597,8 +605,10 @@ class TabConfig:
                         self.config_manager.data["personnel"] = {}
                     cap_jour = max(1, int(ent_cap_jour.get()))
                     seuil_acc = max(1, int(ent_seuil_acc.get()))
+                    mpc = max(0.1, float(ent_mpc.get()))
                     self.config_manager.data["personnel"]["capacite_journaliere_normale"] = cap_jour
                     self.config_manager.data["personnel"]["seuil_accumulation_alerte"] = seuil_acc
+                    self.config_manager.data["personnel"]["metres_par_case"] = mpc
                     self.config_manager.sauvegarder()
                     popup.destroy()
                 except ValueError:
