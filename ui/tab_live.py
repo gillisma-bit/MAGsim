@@ -1072,6 +1072,19 @@ class TabLive:
         """Distribue une liste de tubes vers leurs prochaines destinations en respectant les file_max."""
         # Grouper les tubes par prochaine destination
         while tubes:
+            # Vérification horaire : si le tech vient de passer hors service,
+            # remettre les tubes non encore déposés en file d'entrée et arrêter.
+            if tech.en_arret_maladie or not self._tech_est_en_service(tech):
+                tech.en_service = False
+                # Remettre les tubes non déposés dans la file d'entrée
+                for tube in tubes:
+                    if not tube.get("dropped_at_machine"):
+                        self.entry_queue.append(tube)
+                tech.carried_tubes = []
+                if not self.headless:
+                    self._update_tech_sprite_bienetre(tech)
+                return
+
             # Compteur virtuel : tubes déjà assignés à chaque machine dans CE batch
             # (permet à la stratégie fill-first de tenir compte des tubes déjà attribués
             #  aux machines précédentes avant tout déplacement physique)
