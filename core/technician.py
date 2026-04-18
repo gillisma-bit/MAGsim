@@ -48,6 +48,8 @@ class TechnicianState:
         self.taux_recuperation_nuit = 0.15      # réduction du mécontentement par nuit de repos (0–1)
         self.en_arret_maladie = False           # le tech est en arrêt maladie
         self.en_service = True                  # False quand hors plage horaire
+        self.office_x = x                       # coordonnées du bureau (pour retour fin de quart)
+        self.office_y = y
         self.historique_bienetre = []           # [(jour, mecontentement), ...] pour les stats
 
     # ------------------------------------------------------------------

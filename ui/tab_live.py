@@ -312,6 +312,8 @@ class TabLive:
                     tech.taux_montee_fatigue   = float(office.get("taux_montee_fatigue", 0.01))
                     tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                     tech.capacite_max_tubes    = int(office.get("capacite_max_tubes", 10))
+                    tech.office_x = office["coords"]["x"]
+                    tech.office_y = office["coords"]["y"]
                     self.technicians.append(tech)
 
                 # Créer l'environnement SimPy et lancer les processus
@@ -402,6 +404,8 @@ class TabLive:
                 tech.taux_montee_fatigue   = float(office.get("taux_montee_fatigue", 0.01))
                 tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                 tech.capacite_max_tubes    = int(office.get("capacite_max_tubes", 10))
+                tech.office_x = office["coords"]["x"]
+                tech.office_y = office["coords"]["y"]
                 tech.canvas_id = self.canvas.create_oval(
                     tech.x-10, tech.y-10, tech.x+10, tech.y+10,
                     fill=tech.color, outline="black", width=2, tags="tech")
@@ -964,6 +968,13 @@ class TabLive:
             en_service = (not tech.en_arret_maladie) and self._tech_est_en_service(tech)
             tech.en_service = en_service
             if not en_service:
+                # Retourner au bureau avant de se mettre en veille
+                office_x = getattr(tech, 'office_x', tech.x)
+                office_y = getattr(tech, 'office_y', tech.y)
+                if not self.headless and (abs(tech.x - office_x) > 5 or abs(tech.y - office_y) > 5):
+                    libre_x, libre_y = self.trouver_case_libre_proche(
+                        office_x, office_y, from_x=tech.x, from_y=tech.y)
+                    yield self.env.process(self.deplacer_vers(tech, libre_x, libre_y))
                 if not self.headless:
                     self._update_tech_sprite_bienetre(tech)
                 yield self.env.timeout(15)   # re-vérifie toutes les 15 min sim
@@ -1072,7 +1083,7 @@ class TabLive:
         # Grouper les tubes par prochaine destination
         while tubes:
             # Vérification horaire : si le tech vient de passer hors service,
-            # remettre les tubes non encore déposés en file d'entrée et arrêter.
+            # remettre les tubes non encore déposés en file d'entrée et retourner au bureau.
             if tech.en_arret_maladie or not self._tech_est_en_service(tech):
                 tech.en_service = False
                 # Remettre les tubes non déposés dans la file d'entrée
@@ -1080,7 +1091,14 @@ class TabLive:
                     if not tube.get("dropped_at_machine"):
                         self.entry_queue.append(tube)
                 tech.carried_tubes = []
+                # Retourner au bureau
                 if not self.headless:
+                    office_x = getattr(tech, 'office_x', tech.x)
+                    office_y = getattr(tech, 'office_y', tech.y)
+                    if abs(tech.x - office_x) > 5 or abs(tech.y - office_y) > 5:
+                        libre_x, libre_y = self.trouver_case_libre_proche(
+                            office_x, office_y, from_x=tech.x, from_y=tech.y)
+                        yield self.env.process(self.deplacer_vers(tech, libre_x, libre_y))
                     self._update_tech_sprite_bienetre(tech)
                 return
 
