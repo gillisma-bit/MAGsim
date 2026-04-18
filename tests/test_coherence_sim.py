@@ -179,6 +179,7 @@ def _init_sim(tab, seed):
         "transit_time_pending_max": [],
         "rejetes": [], "degrades": [], "pannes": {},
         "distances_tech": {}, "bienetre": {}, "arrivees_par_heure": {},
+        "events_arret_maladie": [],
     }
     tab._jours_connus_dist  = set()
     tab.stats_tubes_total   = 0

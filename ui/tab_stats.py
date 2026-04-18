@@ -339,7 +339,7 @@ class TabStats:
         if show_transit:
             ax4 = _next_ax()
             ax4.set_facecolor("#ffffff")
-            ax4.set_title("Temps de transit — tubes sortis + tubes en attente",
+            ax4.set_title("Temps de transit — tubes sortis + tubes en attente + congés maladie",
                           fontsize=11, fontweight="bold", pad=8)
             ax4.set_ylabel("Durée (min)")
             ax4.set_xlabel("Temps écoulé")
@@ -376,13 +376,61 @@ class TabStats:
                         ax4.text(times[-1] if times else 0, last_pend,
                                  f"  {_fmt_duree(last_pend)}",
                                  va="center", fontsize=9, color="#e74c3c")
-            else:
+
+            # ── Marqueurs congés maladie ──────────────────────────────────────
+            _PALETTE_SICK = [
+                "#e67e22", "#27ae60", "#2980b9", "#8e44ad",
+                "#16a085", "#d35400", "#c0392b", "#7f8c8d",
+            ]
+            events_maladie = hist.get("events_arret_maladie", [])
+            if events_maladie:
+                # Associer une couleur stable par technicien
+                techs_maladie = list(dict.fromkeys(e["nom"] for e in events_maladie))
+                couleur_par_tech = {
+                    nom: _PALETTE_SICK[i % len(_PALETTE_SICK)]
+                    for i, nom in enumerate(techs_maladie)
+                }
+                # Tracer une ligne verticale par événement + annotation minimale
+                techs_deja_legendes_debut  = set()
+                techs_deja_legendes_retour = set()
+                y_top = ax4.get_ylim()[1] if ax4.get_ylim()[1] > 0 else 1
+                for ev in events_maladie:
+                    clr  = couleur_par_tech[ev["nom"]]
+                    ev_t = ev["t"]
+                    if ev["type"] == "debut":
+                        label = (f"🏥 début arrêt — {ev['nom']}"
+                                 if ev["nom"] not in techs_deja_legendes_debut else "")
+                        ax4.axvline(x=ev_t, color=clr, linewidth=1.8,
+                                    linestyle="--", alpha=0.80, label=label or "_nolegend_")
+                        ax4.annotate(
+                            f"🏥{ev['nom']}",
+                            xy=(ev_t, 0), xycoords=("data", "axes fraction"),
+                            xytext=(2, 4), textcoords="offset points",
+                            fontsize=7.5, color=clr, rotation=90,
+                            va="bottom", ha="left",
+                        )
+                        techs_deja_legendes_debut.add(ev["nom"])
+                    else:  # retour
+                        label = (f"✅ retour — {ev['nom']}"
+                                 if ev["nom"] not in techs_deja_legendes_retour else "")
+                        ax4.axvline(x=ev_t, color=clr, linewidth=1.4,
+                                    linestyle=":", alpha=0.65, label=label or "_nolegend_")
+                        ax4.annotate(
+                            f"↩{ev['nom']}",
+                            xy=(ev_t, 0.5), xycoords=("data", "axes fraction"),
+                            xytext=(2, 4), textcoords="offset points",
+                            fontsize=7.5, color=clr, rotation=90,
+                            va="bottom", ha="left",
+                        )
+                        techs_deja_legendes_retour.add(ev["nom"])
+
+            if not has_data and not has_pending and not events_maladie:
                 ax4.text(0.5, 0.5,
                          "En attente — aucun tube n'a encore atteint la SORTIE.\n"
                          "La courbe apparaîtra dès que les premiers tubes completent leur parcours.",
                          ha="center", va="center", transform=ax4.transAxes,
                          fontsize=10, color="#888", style="italic")
-            ax4.legend(loc="upper left", fontsize=9, framealpha=0.75)
+            ax4.legend(loc="upper left", fontsize=8, framealpha=0.75)
 
         # ── Graphique erreurs cumulées ─────────────────────────────────
         if show_errors:

@@ -38,7 +38,8 @@ class TabLive:
                               "transit_time_pending_max": [],
                               "rejetes": [], "degrades": [], "pannes": {},
                               "distances_tech": {}, "bienetre": {},
-                              "arrivees_par_heure": {}}
+                              "arrivees_par_heure": {},
+                              "events_arret_maladie": []}
         self.stats_tubes_total = 0
         self.tubes_sortis = 0  # Tubes ayant atteint la sortie
         self.transit_times_raw = []  # Durées de transit individuelles (arrivee → sortie)
@@ -280,7 +281,8 @@ class TabLive:
                                       "transit_time_pending_max": [],
                                       "rejetes": [], "degrades": [], "pannes": {},
                                       "distances_tech": {}, "bienetre": {},
-                                      "arrivees_par_heure": {}}
+                                      "arrivees_par_heure": {},
+                                      "events_arret_maladie": []}
                 self._jours_connus_dist = set()
                 self.stats_tubes_total = 0
                 self.tubes_sortis = 0
@@ -437,7 +439,8 @@ class TabLive:
                                   "transit_time_pending_max": [],
                                   "rejetes": [], "degrades": [], "pannes": {},
                                   "distances_tech": {},
-                                  "arrivees_par_heure": {}}
+                                  "arrivees_par_heure": {},
+                                  "events_arret_maladie": []}
             self._jours_connus_dist = set()
             self.stats_tubes_total = 0
             self.tubes_sortis = 0
@@ -784,6 +787,10 @@ class TabLive:
                             if proba_retour > 0 and _rnd.random() < proba_retour:
                                 tech.en_arret_maladie = False
                                 tech.jours_consecutifs_surcharge = 0
+                                self.stats_history["events_arret_maladie"].append({
+                                    "t": t, "nom": tech.nom, "type": "retour",
+                                    "mecontentement": round(tech.mecontentement, 3),
+                                })
                             tech.jours_conges_consecutifs = 0  # congé maladie ≠ repos planifié
                         else:
                             # Vérifier si hier était un jour de repos planifié
@@ -803,6 +810,10 @@ class TabLive:
                                 risque = tech.calculer_risque_arret_maladie()
                                 if risque > 0 and _rnd.random() < risque:
                                     tech.en_arret_maladie = True
+                                    self.stats_history["events_arret_maladie"].append({
+                                        "t": t, "nom": tech.nom, "type": "debut",
+                                        "mecontentement": round(tech.mecontentement, 3),
+                                    })
                         self._update_tech_sprite_bienetre(tech)
             for idx, tech in enumerate(self.technicians):
                 k = tech.nom if tech.nom else f"Tech {idx + 1}"
