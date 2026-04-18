@@ -721,7 +721,10 @@ class TabLive:
             self.stats_history["degrades"].append(self.tubes_degrades)
 
             # Distance journalière par technicien (1 jour SimPy = 1440 min)
-            # 1 px = 1 cm (grille : 1 case = 50 px = 50 cm). Distance stockée en mètres.
+            # 1 case = 50 px ; metres_par_case (config) définit l'échelle réelle.
+            # Par défaut 3.0 m/case → 1 px = 0.06 m (lab ~72 m x 42 m)
+            personnel_cfg_dist = self.config_manager.data.get("personnel", {})
+            _metres_par_px = float(personnel_cfg_dist.get("metres_par_case", 3.0)) / 50.0
             JOUR_DUREE = 1440.0
             jour_actuel = int(t / JOUR_DUREE)
             if not hasattr(self, "_jours_connus_dist"):
@@ -749,7 +752,7 @@ class TabLive:
                 k = tech.nom if tech.nom else f"Tech {idx + 1}"
                 if k not in self.stats_history["distances_tech"]:
                     self.stats_history["distances_tech"][k] = {}
-                d_m = (tech.distance_parcourue_px - tech._distance_debut_jour_px) * 0.01
+                d_m = (tech.distance_parcourue_px - tech._distance_debut_jour_px) * _metres_par_px
                 self.stats_history["distances_tech"][k][jour_actuel] = round(d_m, 1)
                 # Historique bien-être (valeur courante)
                 if k not in self.stats_history["bienetre"]:

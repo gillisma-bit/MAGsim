@@ -164,7 +164,8 @@
             "age": 18,
             "seuil_charge_fatigue": 0.7,
             "taux_montee_fatigue": 0.01,
-            "capacite_max_tubes": 10
+            "capacite_max_tubes": 10,
+            "nom": "Marc"
         },
         "b2": {
             "type": "TECH_OFFICE",
@@ -181,7 +182,8 @@
             "age": 45,
             "seuil_charge_fatigue": 0.75,
             "taux_montee_fatigue": 0.008,
-            "capacite_max_tubes": 12
+            "capacite_max_tubes": 12,
+            "nom": "Antoine"
         },
         "pa2": {
             "type": "Paillasse",
@@ -225,6 +227,24 @@
             "tmep": 360,
             "tmr": 30,
             "delai_max_avant_degrad": 240
+        },
+        "Arnaud": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 1025,
+                "y": 125
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "nom": "Arnaud",
+            "experience": 3,
+            "age": 35,
+            "pct_erreur_tech": 0.0,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.01,
+            "capacite_max_tubes": 10
         }
     },
     "sol": {
@@ -455,27 +475,33 @@
                 "proto1"
             ],
             "pct_urgent": 0.05,
-            "taille_lot_min": 3,
-            "taille_lot_max": 8
+            "taille_lot_min": 1,
+            "taille_lot_max": 5
         }
     },
     "personnel": {
-        "charge_cible_defaut": 0.70,
+        "charge_cible_defaut": 0.7,
         "capacite_journaliere_normale": 150,
         "seuil_accumulation_alerte": 20,
+        "metres_par_case": 3.0,
         "quarts": [
             {
                 "nom": "Jour",
                 "heure_debut": 7,
                 "heure_fin": 19,
-                "tech_ids": ["b1", "b2"],
+                "tech_ids": [
+                    "b1",
+                    "b2"
+                ],
                 "garde": false
             },
             {
                 "nom": "Garde nuit",
                 "heure_debut": 19,
                 "heure_fin": 7,
-                "tech_ids": ["b1"],
+                "tech_ids": [
+                    "b1"
+                ],
                 "garde": true
             }
         ]
