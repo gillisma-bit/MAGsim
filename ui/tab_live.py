@@ -296,16 +296,16 @@ class TabLive:
                 # Charger heure_debut depuis la config ENTREE
                 entrees_cfg = [m for m in machines.values() if m["type"] == "ENTREE"]
                 self.heure_debut_sim = entrees_cfg[0].get("heure_debut", 7.0) if entrees_cfg else 7.0
-                tech_offices = [m for m in machines.values() if m["type"] == "TECH_OFFICE"]
+                tech_offices = [(k, m) for k, m in machines.items() if m["type"] == "TECH_OFFICE"]
                 if not tech_offices:
-                    tech_offices = [{"coords": {"x": 125, "y": 125}}]
-                for idx, office in enumerate(tech_offices):
+                    tech_offices = [("tech_0", {"coords": {"x": 125, "y": 125}})]
+                for idx, (office_key, office) in enumerate(tech_offices):
                     tech = TechnicianState(
                         office["coords"]["x"], office["coords"]["y"],
                         canvas_id=None, index=idx)
                     tech.pct_erreur_base = office.get("pct_erreur_tech", 0.0)
                     tech.pct_erreur     = tech.pct_erreur_base
-                    tech.nom            = office.get("nom", f"Tech {idx + 1}")
+                    tech.nom            = office.get("nom") or office_key
                     tech.experience     = int(office.get("experience", 3))
                     tech.age            = int(office.get("age", 35))
                     tech.seuil_charge_fatigue  = float(office.get("seuil_charge_fatigue", 0.70))
@@ -374,11 +374,10 @@ class TabLive:
 
             # Créer un technicien par bureau TECH_OFFICE et dessiner leurs sprites
             self.technicians = []
-            tech_offices = [m for m in machines.values() if m["type"] == "TECH_OFFICE"]
+            tech_offices = [(k, m) for k, m in machines.items() if m["type"] == "TECH_OFFICE"]
             if not tech_offices:
-                tech_offices_default = [{"coords": {"x": 125, "y": 125}}]
-                tech_offices = tech_offices_default
-            for idx, office in enumerate(tech_offices):
+                tech_offices = [("tech_0", {"coords": {"x": 125, "y": 125}})]
+            for idx, (office_key, office) in enumerate(tech_offices):
                 office_x, office_y = office["coords"]["x"], office["coords"]["y"]
                 # Chercher la première case libre autour du bureau
                 spawn_x, spawn_y = office_x, office_y
@@ -396,7 +395,7 @@ class TabLive:
                 tech = TechnicianState(spawn_x, spawn_y, index=idx)
                 tech.pct_erreur_base = office.get("pct_erreur_tech", 0.0)
                 tech.pct_erreur     = tech.pct_erreur_base
-                tech.nom            = office.get("nom", f"Tech {idx + 1}")
+                tech.nom            = office.get("nom") or office_key
                 tech.experience     = int(office.get("experience", 3))
                 tech.age            = int(office.get("age", 35))
                 tech.seuil_charge_fatigue  = float(office.get("seuil_charge_fatigue", 0.70))
