@@ -4,7 +4,25 @@ import simpy
 import math
 import random
 import heapq
+import bisect
 from core.technician import TechnicianState
+
+
+def _inserer_par_anciennete(queue, tube):
+    """Insère `tube` dans `queue` en respectant l'ordre d'arrivée croissant.
+
+    Les tubes urgents restent toujours en tête. Les tubes normaux sont triés
+    par `arrivee` pour garantir que le plus vieux tube est toujours traité en
+    premier (FIFO strict → aucun tube ne peut être « oublié » en queue).
+    """
+    if tube.get("urgent"):
+        queue.insert(0, tube)
+        return
+    # Recherche dichotomique parmi les seuls tubes normaux
+    nb_urgents = sum(1 for t in queue if t.get("urgent"))
+    arrivees_normaux = [t.get("arrivee", 0) for t in queue[nb_urgents:]]
+    pos = bisect.bisect_left(arrivees_normaux, tube.get("arrivee", 0))
+    queue.insert(nb_urgents + pos, tube)
 
 
 class TabLive:
@@ -1050,6 +1068,8 @@ class TabLive:
                     noms_a_vider.append(nom_m)
 
             if tubes_finis:
+                # Trier par ancienneté : les tubes les plus vieux livrés en premier
+                tubes_finis.sort(key=lambda t: t.get("arrivee", 0))
                 # Réserver les tubes immédiatement — avant tout déplacement
                 for nom_m in noms_a_vider:
                     self.output_queues[nom_m] = []
@@ -1146,9 +1166,10 @@ class TabLive:
             if tech.en_arret_maladie or not self._tech_est_en_service(tech):
                 tech.en_service = False
                 # Remettre les tubes non déposés dans la file d'entrée
+                # en respectant l'ordre chronologique (tube vieux → avant les récents)
                 for tube in tubes:
                     if not tube.get("dropped_at_machine"):
-                        self.entry_queue.append(tube)
+                        _inserer_par_anciennete(self.entry_queue, tube)
                 tech.carried_tubes = []
                 # Retourner au bureau
                 if not self.headless:
@@ -1241,12 +1262,14 @@ class TabLive:
 
                     capacite = machine.get("capacite", 4)
                     seuil = machine.get("seuil", 1)  # seuil minimum pour déclenchement urgent
+                    file_max = machine.get("file_max", machine.get("capacite", 4))
                     queue = self.machine_queues[nom_machine]
                     has_urgent = any(t.get("urgent") for t in queue)
-                    # Lancer si : batch complet OU (urgence présente ET seuil atteint)
+                    # Lancer si : batch complet OU urgence OU file pleine (fallback si file_max < capacite)
                     should_trigger = (
                         len(queue) >= capacite
                         or (has_urgent and len(queue) >= seuil)
+                        or len(queue) >= file_max
                     )
                     if should_trigger and nom_machine not in self.blinking_machines:
                         self.env.process(self.traiter_batch_machine(nom_machine, machine))
@@ -1504,10 +1527,12 @@ class TabLive:
         queue_restante = self.machine_queues.get(nom_machine, [])
         if queue_restante:
             seuil = machine.get("seuil", 1)
+            file_max = machine.get("file_max", machine.get("capacite", 4))
             has_urgent = any(t.get("urgent") for t in queue_restante)
             should_trigger = (
                 len(queue_restante) >= capacite
                 or (has_urgent and len(queue_restante) >= seuil)
+                or len(queue_restante) >= file_max
             )
             if should_trigger:
                 self.env.process(self.traiter_batch_machine(nom_machine, machine))
