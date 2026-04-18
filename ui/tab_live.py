@@ -900,14 +900,18 @@ class TabLive:
         Règles :
           - Aucun horaire défini → toujours en service.
           - actif = false → jamais en service.
-          - Quart de nuit : heure_debut > heure_fin (ex: 16h → 8h).
-          - Calcul du jour de semaine basé sur jour_debut_simulation de la config.
+          - Quart de nuit (h_debut > h_fin, ex: 16→8) :
+              * Portion soirée (heure >= h_debut) → vérifier que le jour CALENDAIRE actuel est actif.
+              * Portion matin  (heure <  h_fin)   → vérifier que le jour CALENDAIRE précédent est actif.
+                (Le quart a démarré la veille ; on ne doit pas être en service si ce n'était pas
+                 un jour de travail, même si aujourd'hui l'est.)
+          - Le jour calendaire utilise la frontière MINUIT (≠ frontière SimPy qui est à heure_debut_sim).
         """
         horaires = self.config_manager.data.get("horaires", {})
         h_tech = horaires.get(tech.nom, {})
 
         if not h_tech:
-            return True  # pas de contrainte → disponible
+            return True  # pas de contrainte → toujours disponible
 
         if not h_tech.get("actif", True):
             return False
@@ -916,22 +920,37 @@ class TabLive:
         jour_debut_sim = int(personnel.get("jour_debut_simulation", 0))  # 0=Lundi
 
         t = self.env.now
-        jour_absolu = int(t / 1440)                          # 0, 1, 2 …
-        jour_semaine = (jour_debut_sim + jour_absolu) % 7    # 0=L … 6=D
+        h_debut_sim = self.heure_debut_sim  # heure réelle à t=0 (ex: 7.0)
+
+        # ── Jour calendaire (frontière minuit) ────────────────────────────
+        # (t + h_debut_sim*60) convertit le temps SimPy en minutes depuis
+        # le minuit précédant t=0, puis on divise par 1440 pour avoir les jours.
+        calendar_day  = int((t + h_debut_sim * 60) / 1440)
+        jour_semaine  = (jour_debut_sim + calendar_day) % 7   # 0=L … 6=D
 
         jours_actifs = h_tech.get("jours", list(range(5)))
-        if jour_semaine not in jours_actifs:
-            return False
-
-        # Heure actuelle dans la journée (décimale, 0–24)
-        heure_actuelle = (self.heure_debut_sim + (t % 1440) / 60.0) % 24.0
         h_debut = float(h_tech.get("heure_debut", 7))
-        h_fin   = float(h_tech.get("heure_fin", 15))
+        h_fin   = float(h_tech.get("heure_fin",   15))
 
-        # Quart traversant minuit (ex: 16h→8h)
+        # Heure réelle actuelle (décimale, 0–24)
+        heure_actuelle = (h_debut_sim + (t % 1440) / 60.0) % 24.0
+
         if h_debut > h_fin:
-            return heure_actuelle >= h_debut or heure_actuelle < h_fin
+            # ── Quart traversant minuit (ex: 16h→8h) ──────────────────────
+            if heure_actuelle >= h_debut:
+                # Portion soirée : le quart démarre CE jour calendaire
+                return jour_semaine in jours_actifs
+            elif heure_actuelle < h_fin:
+                # Portion matin : le quart a démarré le jour calendaire PRÉCÉDENT
+                jour_precedent = (jour_semaine - 1) % 7
+                return jour_precedent in jours_actifs
+            else:
+                # Entre h_fin et h_debut → hors service
+                return False
         else:
+            # ── Quart normal (même jour) ───────────────────────────────────
+            if jour_semaine not in jours_actifs:
+                return False
             return h_debut <= heure_actuelle < h_fin
 
     def technician_process(self, tech):
