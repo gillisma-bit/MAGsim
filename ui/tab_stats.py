@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
+import threading
+import ui.theme as theme
 
 try:
     import matplotlib
@@ -17,7 +19,16 @@ class TabStats:
         self.parent = parent
         self.config_manager = config_manager
         self.tab_live = tab_live_ref
+        self._assistant_window = None   # fenêtre flottante Assistant IA
+        # ── Assistant IA intégré ──
+        self._ia_conversation  = None
+        self._ia_en_cours      = False
+        self._ia_model         = "llama3"
+        self._ia_backend       = "ollama"   # "ollama" | "github"
+        self._ia_token_start   = None
+        self._ia_stop_event    = None
         self._build_ui()
+        threading.Thread(target=self._ia_charger_modeles, daemon=True).start()
 
     def set_tab_live(self, tab_live):
         self.tab_live = tab_live
@@ -27,7 +38,7 @@ class TabStats:
             ttk.Label(
                 self.parent,
                 text="⚠️  matplotlib requis pour cet onglet.\n\nInstallez-le avec : pip install matplotlib",
-                font=("Segoe UI", 13), foreground="#c0392b", justify="center"
+                font=theme.FONT_TITLE, foreground="#c0392b", justify="center"
             ).pack(expand=True)
             return
 
@@ -38,15 +49,20 @@ class TabStats:
         ttk.Button(ctrl, text="🔄  Actualiser les graphiques",
                    command=self.refresh).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(ctrl, text="🗑  Effacer l'historique",
+        ttk.Button(ctrl, text="�  Effacer l'historique",
                    command=self.clear_history).pack(side=tk.LEFT, padx=5)
+
+        ttk.Separator(ctrl, orient="vertical").pack(side=tk.LEFT, fill="y", padx=8, pady=2)
+
+        ttk.Button(ctrl, text="🤖  Assistant IA",
+                   command=self._ouvrir_assistant).pack(side=tk.LEFT, padx=5)
 
         # ── Cases à cocher par graphique ──────────────────────────────────
         checks = ttk.Frame(self.parent)
         checks.pack(fill="x", padx=12, pady=(0, 2))
 
         ttk.Label(checks, text="Graphiques affichés :",
-                  font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(4, 8))
+                  font=theme.FONT_LABEL).pack(side=tk.LEFT, padx=(4, 8))
 
         self.show_queues = tk.BooleanVar(value=True)
         ttk.Checkbutton(checks, text="Files d'attente",
@@ -93,7 +109,7 @@ class TabStats:
         self.ent_duree.pack(side=tk.LEFT, padx=2)
 
         ttk.Label(fast, text="  ← ex : 0.5 = demi-journée  |  1 = 1 jour (1440 min)  |  7 = semaine",
-                  font=("Segoe UI", 9), foreground="#777").pack(side=tk.LEFT, padx=4)
+                  font=theme.FONT_NOTE, foreground="#777").pack(side=tk.LEFT, padx=4)
 
         self.btn_fast = ttk.Button(fast, text="▶ Lancer",
                                    command=self.lancer_simulation_rapide)
@@ -102,14 +118,17 @@ class TabStats:
         self.progress = ttk.Progressbar(fast, mode="determinate", length=200)
         self.progress.pack(side=tk.LEFT, padx=8, pady=4)
 
-        self.lbl_fast_status = ttk.Label(fast, text="", font=("Segoe UI", 9), foreground="#2c3e50")
+        self.lbl_fast_status = ttk.Label(fast, text="", font=theme.FONT_NOTE, foreground="#2c3e50")
         self.lbl_fast_status.pack(side=tk.LEFT, padx=4)
 
-        # --- Zone principale : graphiques (gauche) + panneau résumé (droite) ---
+        # --- Zone principale : graphiques (gauche) + panel IA (milieu) + résumé (droite) ---
         main_area = tk.Frame(self.parent)
         main_area.pack(expand=True, fill="both", padx=4, pady=4)
-        main_area.columnconfigure(0, weight=1)
-        main_area.columnconfigure(1, weight=0)
+        main_area.columnconfigure(0, weight=1)   # graphes — extensible
+        main_area.columnconfigure(1, weight=0)   # séparateur
+        main_area.columnconfigure(2, weight=0)   # assistant IA
+        main_area.columnconfigure(3, weight=0)   # séparateur
+        main_area.columnconfigure(4, weight=0)   # indicateurs
         main_area.rowconfigure(0, weight=1)
 
         # ── Colonne gauche : matplotlib ───────────────────────────────────────
@@ -127,15 +146,133 @@ class TabStats:
         # ── Séparateur ────────────────────────────────────────────────────────
         tk.Frame(main_area, bg="#cccccc", width=1).grid(row=0, column=1, sticky="ns")
 
+        # ── Colonne centrale : assistant IA intégré ───────────────────────────
+        self._ia_frame = tk.Frame(main_area, bg="#13131f", width=320)
+        self._ia_frame.grid(row=0, column=2, sticky="nsew")
+        self._ia_frame.grid_propagate(False)
+
+        # En-tête avec sélecteur de modèle
+        ia_header = tk.Frame(self._ia_frame, bg="#13131f")
+        ia_header.pack(fill="x")
+        tk.Label(ia_header,
+                 text="🤖  Assistant IA",
+                 font=theme.FONT_SECTION,
+                 bg="#13131f", fg="#cba6f7",
+                 anchor="w", padx=10, pady=6).pack(side=tk.LEFT)
+
+        self._ia_model_var = tk.StringVar(value="…")
+        self._ia_combo = ttk.Combobox(ia_header, textvariable=self._ia_model_var,
+                                      width=18, state="readonly",
+                                      font=theme.FONT_NOTE)
+        self._ia_combo.pack(side=tk.RIGHT, padx=(0, 8), pady=4)
+        self._ia_combo.bind("<<ComboboxSelected>>", self._ia_on_model_change)
+        tk.Frame(self._ia_frame, bg="#313145", height=1).pack(fill="x")
+
+        # Historique du chat
+        chat_area = tk.Frame(self._ia_frame, bg="#1e1e2e")
+        chat_area.pack(fill="both", expand=True, padx=0, pady=0)
+        chat_area.rowconfigure(0, weight=1)
+        chat_area.columnconfigure(0, weight=1)
+
+        self._ia_chat = tk.Text(
+            chat_area,
+            font=theme.FONT_BODY,
+            bg="#1e1e2e", fg="#cdd6f4",
+            relief="flat", bd=0,
+            wrap="word",
+            state="disabled",
+            padx=8, pady=6,
+            cursor="arrow",
+        )
+        sb_ia = ttk.Scrollbar(chat_area, orient="vertical", command=self._ia_chat.yview)
+        self._ia_chat.configure(yscrollcommand=sb_ia.set)
+        sb_ia.grid(row=0, column=1, sticky="ns")
+        self._ia_chat.grid(row=0, column=0, sticky="nsew")
+
+        self._ia_chat.tag_config("user",      foreground="#89dceb", font=theme.FONT_LABEL)
+        self._ia_chat.tag_config("assistant", foreground="#cdd6f4")
+        self._ia_chat.tag_config("system",    foreground="#585b70", font=theme.FONT_NOTE + ("italic",))
+        self._ia_chat.tag_config("error",     foreground="#f38ba8")
+
+        # Zone de saisie
+        saisie_ia = tk.Frame(self._ia_frame, bg="#181825")
+        saisie_ia.pack(fill="x", padx=0, pady=0)
+        saisie_ia.columnconfigure(0, weight=1)
+
+        self._ia_saisie = tk.Text(
+            saisie_ia,
+            font=theme.FONT_BODY,
+            bg="#181825", fg="#cdd6f4",
+            relief="flat", bd=0,
+            height=3,
+            padx=8, pady=6,
+            wrap="word",
+            insertbackground="#cdd6f4",
+        )
+        self._ia_saisie.grid(row=0, column=0, sticky="ew")
+        self._ia_saisie.bind("<Return>", self._ia_on_entree_rapide)
+        self._ia_saisie.bind("<Shift-Return>", lambda e: None)
+
+        self._ia_btn_envoyer = tk.Button(
+            saisie_ia,
+            text="↵",
+            font=theme.FONT_LABEL,
+            bg="#7c3aed", fg="white",
+            relief="flat", bd=0,
+            padx=10, pady=4,
+            activebackground="#6d28d9",
+            cursor="hand2",
+            command=self._ia_envoyer,
+        )
+        self._ia_btn_envoyer.grid(row=0, column=1, sticky="nsew", padx=2, pady=4)
+
+        self._ia_btn_stop = tk.Button(
+            saisie_ia,
+            text="◼",
+            font=theme.FONT_LABEL,
+            bg="#e64553", fg="white",
+            relief="flat", bd=0,
+            padx=8, pady=4,
+            activebackground="#c0392b",
+            cursor="hand2",
+            command=self._ia_stopper,
+            state="disabled",
+        )
+        self._ia_btn_stop.grid(row=0, column=2, sticky="nsew", padx=(0, 2), pady=4)
+
+        tk.Button(
+            saisie_ia,
+            text="📊",
+            font=theme.FONT_BODY,
+            bg="#313145", fg="white",
+            relief="flat", bd=0,
+            padx=6, pady=4,
+            activebackground="#45475a",
+            cursor="hand2",
+            command=self._ia_dialog_sources,
+        ).grid(row=0, column=3, sticky="nsew", padx=(0, 2), pady=4)
+
+        # Statut
+        self._ia_lbl_statut = tk.Label(
+            self._ia_frame,
+            text="⬤  Vérification…",
+            font=theme.FONT_NOTE,
+            bg="#13131f", fg="#585b70",
+            anchor="w", padx=8, pady=3,
+        )
+        self._ia_lbl_statut.pack(fill="x")
+
+        # ── Séparateur ────────────────────────────────────────────────────────
+        tk.Frame(main_area, bg="#cccccc", width=1).grid(row=0, column=3, sticky="ns")
+
         # ── Colonne droite : panneau résumé ───────────────────────────────────
         self._resume_frame = tk.Frame(main_area, bg="#f8f9fa", width=260)
-        self._resume_frame.grid(row=0, column=2, sticky="nsew")
+        self._resume_frame.grid(row=0, column=4, sticky="nsew")
         self._resume_frame.grid_propagate(False)   # largeur fixe
-        main_area.columnconfigure(2, weight=0)
 
         tk.Label(self._resume_frame,
                  text="📊  Indicateurs clés",
-                 font=("Segoe UI", 11, "bold"),
+                 font=theme.FONT_SECTION,
                  bg="#f8f9fa", fg="#2c3e50",
                  anchor="w", padx=12, pady=8).pack(fill="x")
         tk.Frame(self._resume_frame, bg="#dde1e7", height=1).pack(fill="x")
@@ -165,7 +302,7 @@ class TabStats:
         self._resume_placeholder = tk.Label(
             self._resume_inner,
             text="Lancez une simulation\npuis cliquez sur\nActualiser.",
-            font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#999",
+            font=theme.FONT_NOTE + ("italic",), bg="#f8f9fa", fg="#999",
             justify="center", pady=20)
         self._resume_placeholder.pack()
 
@@ -178,7 +315,7 @@ class TabStats:
                 w.destroy()
             tk.Label(self._resume_inner,
                      text="Référence à la simulation\nmanquante.",
-                     font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#c0392b",
+                     font=theme.FONT_NOTE + ("italic",), bg="#f8f9fa", fg="#c0392b",
                      justify="center", pady=20).pack()
             return
 
@@ -188,7 +325,7 @@ class TabStats:
                 w.destroy()
             tk.Label(self._resume_inner,
                      text="Aucune donnée —\ndémarrez une simulation\net attendez quelques secondes.",
-                     font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#999",
+                     font=theme.FONT_NOTE + ("italic",), bg="#f8f9fa", fg="#999",
                      justify="center", pady=20).pack()
             return
 
@@ -249,7 +386,14 @@ class TabStats:
         _plot_counter = [0]
         def _next_ax():
             _plot_counter[0] += 1
-            return self.fig.add_subplot(nrows, ncols, _plot_counter[0])
+            idx = _plot_counter[0]
+            # Si c'est le dernier graphique ET qu'il tombe seul sur une rangée impaire
+            # → le faire occuper toute la largeur (colspan=2)
+            if ncols == 2 and n_plots % 2 == 1 and idx == n_plots:
+                ax = self.fig.add_subplot(nrows, 1, nrows)
+            else:
+                ax = self.fig.add_subplot(nrows, ncols, idx)
+            return ax
 
         self.fig.clear()
 
@@ -398,12 +542,12 @@ class TabStats:
                     clr  = couleur_par_tech[ev["nom"]]
                     ev_t = ev["t"]
                     if ev["type"] == "debut":
-                        label = (f"🏥 début arrêt — {ev['nom']}"
+                        label = (f"[arret] {ev['nom']}"
                                  if ev["nom"] not in techs_deja_legendes_debut else "")
                         ax4.axvline(x=ev_t, color=clr, linewidth=1.8,
                                     linestyle="--", alpha=0.80, label=label or "_nolegend_")
                         ax4.annotate(
-                            f"🏥{ev['nom']}",
+                            f"arret:{ev['nom']}",
                             xy=(ev_t, 0), xycoords=("data", "axes fraction"),
                             xytext=(2, 4), textcoords="offset points",
                             fontsize=7.5, color=clr, rotation=90,
@@ -411,7 +555,7 @@ class TabStats:
                         )
                         techs_deja_legendes_debut.add(ev["nom"])
                     else:  # retour
-                        label = (f"✅ retour — {ev['nom']}"
+                        label = (f"[retour] {ev['nom']}"
                                  if ev["nom"] not in techs_deja_legendes_retour else "")
                         ax4.axvline(x=ev_t, color=clr, linewidth=1.4,
                                     linestyle=":", alpha=0.65, label=label or "_nolegend_")
@@ -540,6 +684,9 @@ class TabStats:
         # ── Panneau résumé (colonne droite) ────────────────────────────
         self._update_panneau_resume(hist, times, noms, machines, distances, bienetre_data, _fmt_duree)
 
+        # ── Actualiser le contexte de l'assistant IA intégré ──────────
+        self._ia_actualiser_contexte(hist)
+
     # ------------------------------------------------------------------
     def _stats_card(self, parent, niveau, titre, corps_lignes):
         """Carte visuellement stylisée dans le panneau résumé."""
@@ -558,11 +705,11 @@ class TabStats:
         inner = tk.Frame(outer, bg=bg, padx=8, pady=5)
         inner.pack(fill="x")
 
-        tk.Label(inner, text=titre, font=("Segoe UI", 9, "bold"),
+        tk.Label(inner, text=titre, font=theme.FONT_LABEL,
                  bg=bg, fg=accent, anchor="w").pack(fill="x")
 
         for ligne in corps_lignes:
-            tk.Label(inner, text=ligne, font=("Segoe UI", 9),
+            tk.Label(inner, text=ligne, font=theme.FONT_BODY,
                      bg=bg, fg="#2c3e50", anchor="w", wraplength=220,
                      justify="left").pack(fill="x")
 
@@ -735,6 +882,298 @@ class TabStats:
         self.refresh()
 
     # ------------------------------------------------------------------
+    def _ouvrir_assistant(self):
+        """Ouvre l'assistant IA dans une fenêtre flottante indépendante."""
+        from ui.tab_assistant import TabAssistant
+
+        # Si la fenêtre existe déjà, la remettre au premier plan
+        if self._assistant_window is not None:
+            try:
+                if self._assistant_window.winfo_exists():
+                    self._assistant_window.lift()
+                    self._assistant_window.focus_force()
+                    return
+            except Exception:
+                pass
+
+        win = tk.Toplevel(self.parent)
+        win.title("🤖 Assistant IA — MAGsim")
+        win.geometry("920x700")
+        win.minsize(640, 480)
+        self._assistant_window = win
+
+        # Centrer par rapport à la fenêtre principale
+        self.parent.update_idletasks()
+        root = self.parent.winfo_toplevel()
+        rx = root.winfo_x() + root.winfo_width() // 2 - 460
+        ry = root.winfo_y() + root.winfo_height() // 2 - 350
+        win.geometry(f"920x700+{max(0, rx)}+{max(0, ry)}")
+
+        frame = ttk.Frame(win)
+        frame.pack(expand=True, fill="both")
+        TabAssistant(frame, self.config_manager, tab_live_ref=self.tab_live)
+
+        def _on_close():
+            self._assistant_window = None
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  Assistant IA intégré (panneau central)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _ia_afficher(self, texte, tag="system"):
+        self._ia_chat.config(state="normal")
+        self._ia_chat.insert("end", texte, tag)
+        self._ia_chat.config(state="disabled")
+        self._ia_chat.see("end")
+
+    def _ia_charger_modeles(self):
+        """Thread : charge les modèles Ollama + GitHub Models disponibles."""
+        from core.ai_assistant import (
+            ollama_disponible, lister_modeles,
+            github_models_disponible, GITHUB_MODELES,
+        )
+        entrees = []
+        if ollama_disponible():
+            entrees += [f"Ollama │ {m}" for m in lister_modeles()]
+        if github_models_disponible():
+            entrees += [f"GitHub │ {m}" for m in GITHUB_MODELES]
+        self.parent.after(0, self._ia_on_modeles_charges, entrees)
+
+    def _ia_on_modeles_charges(self, entrees):
+        self._ia_combo["values"] = entrees
+
+        if entrees:
+            def _pref(e):
+                return "gpt-4.1-mini" in e.lower() or "llama3" in e.lower()
+            sel = next((e for e in entrees if _pref(e)), entrees[0])
+            self._ia_model_var.set(sel)
+            self._ia_appliquer_selection(sel)
+            self._ia_lbl_statut.config(text=f"⬤  Prêt  [{self._ia_backend.upper()}]", fg="#a6e3a1")
+            self._ia_afficher("Assistant prêt. Posez-moi une question sur la simulation.\n\n", "system")
+            self._ia_init_conversation()
+        else:
+            self._ia_lbl_statut.config(text="⬤  Aucun backend", fg="#f38ba8")
+            self._ia_afficher(
+                "⚠️  Aucun backend disponible.\n"
+                "Option 1 : Installez Ollama (ollama.com)\n"
+                "Option 2 : Configurez un token GitHub dans l'onglet Assistant IA (⛯ Token).\n\n",
+                "error",
+            )
+
+    def _ia_appliquer_selection(self, sel):
+        """Extrait backend + nom du modèle depuis une entrée du combobox."""
+        if sel.startswith("GitHub │ "):
+            self._ia_backend = "github"
+            self._ia_model   = sel[len("GitHub │ "):]
+        else:
+            self._ia_backend = "ollama"
+            self._ia_model   = sel.split("│ ", 1)[-1] if "│" in sel else sel
+
+    def _ia_on_model_change(self, _event=None):
+        """Callback quand l'utilisateur change de modèle dans le combobox."""
+        sel = self._ia_model_var.get()
+        self._ia_appliquer_selection(sel)
+        self._ia_lbl_statut.config(
+            text=f"⬤  {self._ia_model}  [{self._ia_backend.upper()}]", fg="#a6e3a1"
+        )
+        self._ia_init_conversation()
+
+    def _ia_on_ollama_ok(self, modeles):
+        # Méthode gardée pour compatibilité — redirige vers _ia_on_modeles_charges
+        entrees = [f"Ollama │ {m}" for m in modeles]
+        self._ia_on_modeles_charges(entrees)
+
+    def _ia_on_ollama_absent(self):
+        self._ia_on_modeles_charges([])
+
+    def _ia_init_conversation(self):
+        from core.ai_assistant import Conversation
+        stats      = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        aggregator = getattr(self.tab_live, "aggregator",    None) if self.tab_live else None
+        conv = Conversation(model=self._ia_model, backend=self._ia_backend)
+        conv.initialiser(self.config_manager.data, stats, aggregator=aggregator)
+        self._ia_conversation = conv
+
+    def _ia_actualiser_contexte(self, stats):
+        """Appelé depuis refresh() — met à jour le contexte sans effacer l'historique."""
+        if self._ia_conversation is None:
+            return
+        try:
+            aggregator = getattr(self.tab_live, "aggregator", None) if self.tab_live else None
+            if not self._ia_conversation._has_simulation and stats and stats.get("time"):
+                self._ia_conversation.actualiser_contexte(stats, aggregator=aggregator)
+            elif stats and stats != self._ia_conversation._stats_history:
+                self._ia_conversation.actualiser_contexte(stats, aggregator=aggregator)
+        except Exception:
+            pass
+
+    def _ia_on_entree_rapide(self, event):
+        if not event.state & 0x1:  # Shift non enfoncé
+            self._ia_envoyer()
+            return "break"
+
+    def _ia_envoyer(self):
+        if self._ia_en_cours:
+            return
+        texte = self._ia_saisie.get("1.0", "end").strip()
+        if not texte:
+            return
+        if not self._ia_conversation:
+            messagebox.showwarning("Assistant IA", "Ollama n'est pas disponible.", parent=self.parent)
+            return
+
+        # Rafraîchir le contexte si une nouvelle sim est disponible
+        stats_actuelles = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        if stats_actuelles:
+            self._ia_actualiser_contexte(stats_actuelles)
+
+        self._ia_saisie.delete("1.0", "end")
+        self._ia_afficher(f"Vous : {texte}\n\n", "user")
+
+        self._ia_en_cours = True
+        self._ia_stop_event = __import__('threading').Event()
+        self._ia_btn_envoyer.config(state="disabled")
+        self._ia_btn_stop.config(state="normal")
+        self._ia_lbl_statut.config(text="⬤  Réflexion…", fg="#f9e2af")
+        self._ia_afficher("🤖  ", "assistant")
+        self._ia_chat.config(state="normal")
+        self._ia_token_start = self._ia_chat.index("end-1c")
+        self._ia_chat.config(state="disabled")
+
+        _stop = self._ia_stop_event
+
+        def _appel():
+            try:
+                def on_token(tok):
+                    self.parent.after(0, self._ia_on_token, tok)
+                reponse = self._ia_conversation.envoyer(texte, on_token=on_token, stop_event=_stop)
+                self.parent.after(0, self._ia_finaliser, reponse)
+            except ConnectionError as e:
+                self.parent.after(0, self._ia_erreur, str(e))
+            except Exception as e:
+                self.parent.after(0, self._ia_erreur, f"Erreur : {e}")
+
+        threading.Thread(target=_appel, daemon=True).start()
+
+    def _ia_on_token(self, token):
+        self._ia_chat.config(state="normal")
+        self._ia_chat.insert("end", token, "assistant")
+        self._ia_chat.config(state="disabled")
+        self._ia_chat.see("end")
+
+    def _ia_finaliser(self, reponse_brute):
+        from core.ai_assistant import texte_sans_patch
+        self._ia_en_cours = False
+        self._ia_stop_event = None
+        self._ia_btn_envoyer.config(state="normal")
+        self._ia_btn_stop.config(state="disabled")
+        self._ia_lbl_statut.config(text="⬤  Prêt", fg="#a6e3a1")
+        self._ia_chat.config(state="normal")
+        self._ia_chat.delete(self._ia_token_start, "end")
+        texte_propre = texte_sans_patch(reponse_brute)
+        self._ia_chat.insert("end", texte_propre + "\n\n", "assistant")
+        self._ia_chat.config(state="disabled")
+        self._ia_chat.see("end")
+
+    def _ia_stopper(self):
+        """Interrompt la génération en cours."""
+        if self._ia_stop_event:
+            self._ia_stop_event.set()
+        self._ia_afficher("\n[Arrêté]\n\n", "system")
+        self._ia_en_cours = False
+        self._ia_btn_envoyer.config(state="normal")
+        self._ia_btn_stop.config(state="disabled")
+        self._ia_lbl_statut.config(text="⬤  Prêt", fg="#a6e3a1")
+
+    def _ia_dialog_sources(self):
+        """Fenêtre affichant le dernier bloc MÉTRIQUES VÉRIFIABLES utilisé."""
+        import re
+        metriques = (
+            self._ia_conversation._dernieres_metriques
+            if self._ia_conversation else ""
+        )
+        if not metriques:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Sources",
+                "Aucune métrique disponible.\nLancez d'abord une simulation.",
+                parent=self.parent,
+            )
+            return
+
+        dlg = tk.Toplevel(self.parent)
+        dlg.title("📊 Métriques vérifiables")
+        dlg.configure(bg="#1e1e2e")
+        dlg.resizable(True, True)
+        dlg.geometry("600x480")
+        dlg.transient(self.parent)
+
+        tk.Label(dlg,
+                 text="📊  Chiffres utilisés par l'IA",
+                 font=theme.FONT_SECTION,
+                 bg="#1e1e2e", fg="#cba6f7",
+                 anchor="w", padx=12, pady=8).pack(fill="x")
+        tk.Label(dlg,
+                 text="Chaque [Mx] cité dans une réponse correspond à une ligne ci-dessous.",
+                 font=theme.FONT_NOTE + ("italic",),
+                 bg="#1e1e2e", fg="#585b70",
+                 anchor="w", padx=12).pack(fill="x")
+        tk.Frame(dlg, bg="#313145", height=1).pack(fill="x", pady=(4, 0))
+
+        frame_txt = tk.Frame(dlg, bg="#1e1e2e")
+        frame_txt.pack(fill="both", expand=True, padx=8, pady=8)
+        frame_txt.rowconfigure(0, weight=1)
+        frame_txt.columnconfigure(0, weight=1)
+
+        txt = tk.Text(
+            frame_txt,
+            font=("Consolas", 9),
+            bg="#181825", fg="#cdd6f4",
+            relief="flat", bd=0,
+            wrap="none",
+            padx=10, pady=8,
+        )
+        sb_v = ttk.Scrollbar(frame_txt, orient="vertical",   command=txt.yview)
+        sb_h = ttk.Scrollbar(frame_txt, orient="horizontal", command=txt.xview)
+        txt.configure(yscrollcommand=sb_v.set, xscrollcommand=sb_h.set)
+        sb_v.grid(row=0, column=1, sticky="ns")
+        sb_h.grid(row=1, column=0, sticky="ew")
+        txt.grid(row=0, column=0, sticky="nsew")
+
+        txt.tag_config("num",  foreground="#a6e3a1", font=("Consolas", 9, "bold"))
+        txt.tag_config("warn", foreground="#f9e2af")
+
+        txt.config(state="normal")
+        for ligne in metriques.splitlines():
+            if re.search(r"\[M\d+\]", ligne):
+                parts = re.split(r"(\[M\d+\])", ligne)
+                for p in parts:
+                    if re.match(r"\[M\d+\]", p):
+                        txt.insert("end", p, "num")
+                    elif "⚠" in p or "SURCHARG" in p:
+                        txt.insert("end", p, "warn")
+                    else:
+                        txt.insert("end", p)
+                txt.insert("end", "\n")
+            elif "===" in ligne or "---" in ligne:
+                txt.insert("end", ligne + "\n", "num")
+            else:
+                txt.insert("end", ligne + "\n")
+        txt.config(state="disabled")
+
+        ttk.Button(dlg, text="Fermer", command=dlg.destroy,
+                   padding=(10, 4)).pack(pady=(0, 10))
+
+    def _ia_erreur(self, msg):
+        self._ia_en_cours = False
+        self._ia_stop_event = None
+        self._ia_btn_envoyer.config(state="normal")
+        self._ia_btn_stop.config(state="disabled")
+        self._ia_lbl_statut.config(text="⬤  Erreur", fg="#f38ba8")
+        self._ia_afficher(f"⚠️  {msg}\n\n", "error")
+
     def clear_history(self):
         if self.tab_live:
             self.tab_live.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],

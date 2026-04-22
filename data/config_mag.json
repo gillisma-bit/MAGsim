@@ -35,9 +35,10 @@
             },
             "seuil": 1,
             "file_max": 20,
-            "tmep": 8,
-            "tmr": 1,
-            "delai_max_avant_degrad": 360
+            "tmep": 6000.0,
+            "tmr": 60.0,
+            "delai_max_avant_degrad": 360,
+            "tech_requis_poste": false
         },
         "IN": {
             "type": "ENTREE",
@@ -138,15 +139,15 @@
             },
             "seuil": 1,
             "file_max": 25,
-            "tmep": 12,
+            "tmep": 12.0,
             "tmr": 0.33,
             "delai_max_avant_degrad": 300
         },
         "b1": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 1075,
-                "y": 225
+                "x": 675,
+                "y": 875
             },
             "capacite": 4,
             "protocoles": {},
@@ -161,8 +162,8 @@
         "b2": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 925,
-                "y": 125
+                "x": 775,
+                "y": 875
             },
             "capacite": 4,
             "file_max": 4,
@@ -222,8 +223,8 @@
         "Arnaud": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 1025,
-                "y": 125
+                "x": 875,
+                "y": 875
             },
             "capacite": 4,
             "file_max": 4,
@@ -261,6 +262,55 @@
             "coords": {
                 "x": 125,
                 "y": 925
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {}
+        },
+        "tech nuit": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 525,
+                "y": 875
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "nom": "Carl",
+            "experience": 3,
+            "age": 35,
+            "pct_erreur_tech": 0.0,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.01,
+            "taux_recuperation_nuit": 0.15,
+            "capacite_max_tubes": 10
+        },
+        "tech nuit2": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 575.0,
+                "y": 875.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "nom": "gisele",
+            "experience": 3,
+            "age": 35,
+            "pct_erreur_tech": 0.01,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.01,
+            "taux_recuperation_nuit": 0.15,
+            "capacite_max_tubes": 10
+        },
+        "tech": {
+            "type": "REPOS",
+            "coords": {
+                "x": 1075,
+                "y": 975
             },
             "capacite": 4,
             "file_max": 4,
@@ -539,7 +589,8 @@
         "15_20": "COUNTER",
         "22_18": "COUNTER",
         "22_17": "COUNTER",
-        "22_16": "COUNTER"
+        "22_16": "COUNTER",
+        "23_8": "WALL"
     },
     "catalog_protocoles": {
         "centi1": {
@@ -569,7 +620,9 @@
             ],
             "pct_urgent": 0.05,
             "taille_lot_min": 1,
-            "taille_lot_max": 5
+            "taille_lot_max": 5,
+            "duree_validite_min": 260,
+            "duree_validite_max": 380
         }
     },
     "personnel": {
@@ -601,8 +654,76 @@
         ]
     },
     "horaires": {
-        "Marc":    {"jours": [0,1,2,3,4], "heure_debut": 7, "heure_fin": 15, "actif": true},
-        "Antoine": {"jours": [0,1,2,3,4], "heure_debut": 7, "heure_fin": 15, "actif": true},
-        "Arnaud":  {"jours": [0,1,2,3,4], "heure_debut": 7, "heure_fin": 15, "actif": true}
+        "Marc": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true
+        },
+        "Antoine": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true
+        },
+        "Arnaud": {
+            "jours": [
+                5,
+                6
+            ],
+            "heure_debut": 7.0,
+            "heure_fin": 17.0,
+            "actif": true
+        },
+        "Carl": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 16.0,
+            "heure_fin": 24.0,
+            "actif": true
+        },
+        "tech nuit2": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 0.0,
+            "heure_fin": 8.0,
+            "actif": true
+        },
+        "gisele": {
+            "jours": [
+                0,
+                1,
+                5,
+                6
+            ],
+            "heure_debut": 17.0,
+            "heure_fin": 8.0,
+            "pause_debut": 18.0,
+            "pause_fin": 19.0,
+            "pool_garde": false,
+            "actif": true
+        }
     }
 }

@@ -24,9 +24,13 @@ class MenuBar:
         self.root = app.root
         self.menubar = tk.Menu(self.root)
 
+        # Variables d'état pour les options de test
+        self._var_sans_maladie = tk.BooleanVar(value=False)
+
         self._creer_menu_fichier()
         self._creer_menu_configuration()
         self._creer_menu_simulation()
+        self._creer_menu_tests()
         self._creer_menu_aide()
 
         self.root.config(menu=self.menubar)
@@ -86,6 +90,18 @@ class MenuBar:
         self.root.bind_all("<F5>", lambda e: self._lancer_simulation())
 
     # ------------------------------------------------------------------
+    # Tests
+    # ------------------------------------------------------------------
+    def _creer_menu_tests(self):
+        menu = tk.Menu(self.menubar, tearoff=0)
+        menu.add_checkbutton(
+            label="Désactiver arrêts maladie",
+            variable=self._var_sans_maladie,
+            command=self._toggle_sans_maladie,
+        )
+        self.menubar.add_cascade(label="Tests", menu=menu)
+
+    # ------------------------------------------------------------------
     # Aide
     # ------------------------------------------------------------------
     def _creer_menu_aide(self):
@@ -132,6 +148,20 @@ class MenuBar:
             messagebox.showerror("Erreur", "Base de données non initialisée.", parent=self.root)
             return
         DialogConsommables(self.root, db, cfg)
+
+    def _toggle_sans_maladie(self):
+        """Active/désactive les arrêts maladie pour isoler leur impact sur les tubes."""
+        actif = self._var_sans_maladie.get()
+        tab_live = getattr(self.app, "tab_live", None)
+        if tab_live is not None:
+            tab_live.mode_sans_arret_maladie = actif
+        etat = "désactivés" if actif else "activés"
+        messagebox.showinfo(
+            "Mode test",
+            f"Arrêts maladie : {etat}.\n"
+            "Prend effet au prochain jour simulé.",
+            parent=self.root,
+        )
 
     def _a_propos(self):
         messagebox.showinfo(

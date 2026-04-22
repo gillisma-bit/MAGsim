@@ -15,6 +15,7 @@ Interface :
 
 import tkinter as tk
 from tkinter import ttk
+import ui.theme as theme
 
 
 # ── Niveaux de sévérité ──────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ class TabDiagnostic:
         top.pack(fill="x")
 
         ttk.Label(top, text="🔍 Diagnostic de configuration",
-                  font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
+                  font=theme.FONT_TITLE).pack(side=tk.LEFT)
 
         ttk.Button(top, text="↻  Actualiser", command=self.lancer_diagnostic,
                    padding=(10, 4)).pack(side=tk.RIGHT)
@@ -66,7 +67,7 @@ class TabDiagnostic:
 
         self.text = tk.Text(
             frame_rapport,
-            font=("Consolas", 10),
+            font=theme.FONT_MONO_S,
             bg="#1e1e2e", fg="#cdd6f4",
             relief="flat", bd=0,
             wrap="word",
@@ -82,7 +83,7 @@ class TabDiagnostic:
         self.text.tag_config("info",    foreground="#89b4fa")
         self.text.tag_config("warn",    foreground="#f9e2af")
         self.text.tag_config("error",   foreground="#f38ba8")
-        self.text.tag_config("section", foreground="#cba6f7", font=("Consolas", 11, "bold"))
+        self.text.tag_config("section", foreground="#cba6f7", font=theme.FONT_MONO_S + ("bold",))
         self.text.tag_config("dim",     foreground="#585b70")
 
         # Séparateur vertical
@@ -97,7 +98,7 @@ class TabDiagnostic:
         obs_title = tk.Label(
             frame_obs,
             text="📋  Observations & recommandations",
-            font=("Segoe UI", 11, "bold"),
+            font=theme.FONT_SECTION,
             bg="#13131f", fg="#cba6f7",
             anchor="w", padx=14, pady=10
         )
@@ -172,11 +173,11 @@ class TabDiagnostic:
         header.pack(fill="x", padx=10, pady=(6, 2))
 
         tk.Label(header, text=f"{icon}  {titre}",
-                 font=("Segoe UI", 10, "bold"),
+                 font=theme.FONT_LABEL,
                  bg=bg, fg=accent, anchor="w").pack(side=tk.LEFT)
 
         tk.Label(card, text=corps,
-                 font=("Segoe UI", 9),
+                 font=theme.FONT_BODY,
                  bg=bg, fg="#cdd6f4",
                  anchor="nw", justify="left",
                  wraplength=260, padx=10, pady=(0, 6)).pack(fill="x")
@@ -647,7 +648,7 @@ class TabDiagnostic:
         top.pack(fill="x")
 
         ttk.Label(top, text="🔍 Diagnostic de configuration",
-                  font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
+                  font=theme.FONT_TITLE).pack(side=tk.LEFT)
 
         ttk.Button(top, text="↻  Actualiser", command=self.lancer_diagnostic,
                    padding=(10, 4)).pack(side=tk.RIGHT)
@@ -658,7 +659,7 @@ class TabDiagnostic:
 
         self.text = tk.Text(
             frame_res,
-            font=("Consolas", 10),
+            font=theme.FONT_MONO_S,
             bg="#1e1e2e", fg="#cdd6f4",
             relief="flat", bd=0,
             wrap="word",
@@ -675,11 +676,11 @@ class TabDiagnostic:
         self.text.tag_config("info",    foreground="#89b4fa")
         self.text.tag_config("warn",    foreground="#f9e2af")
         self.text.tag_config("error",   foreground="#f38ba8")
-        self.text.tag_config("section", foreground="#cba6f7", font=("Consolas", 11, "bold"))
+        self.text.tag_config("section", foreground="#cba6f7", font=theme.FONT_MONO_S + ("bold",))
         self.text.tag_config("dim",     foreground="#585b70")
 
         # Barre de résumé en bas
-        self.lbl_resume = ttk.Label(self.parent, text="", font=("Segoe UI", 10),
+        self.lbl_resume = ttk.Label(self.parent, text="", font=theme.FONT_BODY,
                                     anchor="w", padding=(14, 4))
         self.lbl_resume.pack(fill="x")
 
@@ -885,6 +886,9 @@ class TabDiagnostic:
             "dim"
         )
 
+        # ── Conseiller — observations basées sur les faits ────────────────────
+        self._section_advisor()
+
         self._freeze()
 
         # Barre de résumé colorée
@@ -900,3 +904,48 @@ class TabDiagnostic:
                  f"{compteurs[OK]} contrôle(s) OK   — config : {self.config_manager.data.get('nom_projet', '?')}",
             foreground=couleur_resume,
         )
+
+    # ── Conseiller de simulation ─────────────────────────────────────────────
+
+    def _section_advisor(self):
+        """Ajoute la section conseiller au rapport de diagnostic."""
+        try:
+            from core.sim_advisor import analyser as _analyser
+        except ImportError:
+            return
+
+        hist     = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        config   = self.config_manager.data
+        insights = _analyser(hist or {}, config)
+
+        _ICONES_ADV = {"ok": "✅", "info": "ℹ️", "tip": "💡", "warn": "⚠️", "error": "❌"}
+        _TAGS_ADV   = {"ok": "ok", "info": "info", "tip": "info", "warn": "warn", "error": "error"}
+
+        self._section("6 · Conseiller — patterns & recommandations")
+
+        if not insights:
+            if not hist or not hist.get("time"):
+                self.text.insert("end",
+                    "  💡  Lancez une simulation (onglet Live ou Stats → Simulation accélérée),\n"
+                    "      puis actualisez pour obtenir des conseils basés sur les données réelles.\n",
+                    "info")
+            else:
+                self.text.insert("end",
+                    "  ✅  Aucun pattern problématique détecté sur cette simulation.\n", "ok")
+            return
+
+        for ins in insights:
+            icon = _ICONES_ADV.get(ins.niveau, "ℹ️")
+            tag  = _TAGS_ADV.get(ins.niveau, "info")
+
+            self.text.insert("end", f"\n  {icon}  {ins.titre}\n", tag)
+            for ligne in ins.corps.split("\n"):
+                if ligne.strip():
+                    self.text.insert("end", f"       {ligne}\n", "dim")
+            if ins.action:
+                self.text.insert("end", "\n     → Recommandation :\n", tag)
+                for ligne in ins.action.split("\n"):
+                    if ligne.strip():
+                        self.text.insert("end", f"       {ligne}\n", tag)
+            self.text.insert("end", "\n", "dim")
+

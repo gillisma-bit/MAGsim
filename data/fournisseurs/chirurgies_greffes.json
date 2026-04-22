@@ -1,0 +1,65 @@
+{
+    "id": "chirurgies_greffes",
+    "nom": "Bloc Chirurgies Greffes",
+    "couleur": "#9b59b6",
+    "icone": "🧬",
+    "position_canvas": {
+        "x": 70,
+        "y": 390
+    },
+    "duree_trajet_min": 15.0,
+    "actif": true,
+    "frequence_base": 60.0,
+    "gamma_k": 1.5,
+    "heure_debut": 7.0,
+    "pct_urgent": 0.5,
+    "profil_horaire": [
+        [
+            0.0,
+            0.1
+        ],
+        [
+            6.0,
+            0.3
+        ],
+        [
+            7.0,
+            0.8
+        ],
+        [
+            9.0,
+            1.2
+        ],
+        [
+            11.0,
+            0.9
+        ],
+        [
+            13.0,
+            0.6
+        ],
+        [
+            15.0,
+            1.0
+        ],
+        [
+            17.0,
+            0.5
+        ],
+        [
+            20.0,
+            0.3
+        ],
+        [
+            22.0,
+            0.2
+        ],
+        [
+            24.0,
+            0.1
+        ]
+    ],
+    "types_tubes_emis": [
+        "tube1"
+    ]
+}

@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import unicodedata
 import re
+import ui.theme as theme
 
 from core.db_manager import DBManager
 from core.consommable import Consommable
@@ -81,7 +82,7 @@ class DialogConsommables(tk.Toplevel):
 
     def _construire_liste(self, parent):
         ttk.Label(parent, text="Consommables",
-                  font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 4))
+                  font=theme.FONT_LABEL).pack(anchor="w", pady=(0, 4))
 
         colonnes = ("nom", "cat", "service", "cout")
         self._tree = ttk.Treeview(parent, columns=colonnes, show="headings",
@@ -110,7 +111,7 @@ class DialogConsommables(tk.Toplevel):
         self._var_id = tk.StringVar(value="—")
         ttk.Label(parent, textvariable=self._var_id,
                   foreground="#666666",
-                  font=("Courier", 9)).grid(row=0, column=1, sticky="w", padx=6, pady=3)
+                  font=theme.FONT_MONO).grid(row=0, column=1, sticky="w", padx=6, pady=3)
 
         # Nom
         ttk.Label(parent, text="Nom du produit *").grid(
@@ -172,7 +173,7 @@ class DialogConsommables(tk.Toplevel):
 
         self._btn_suppr = tk.Button(frame_btns, text="🗑️ Supprimer",
                                     bg="#ec4a38", fg="white",
-                                    font=("Segoe UI", 9, "bold"),
+                                    font=theme.FONT_BTN_DEL,
                                     command=self._supprimer,
                                     state="disabled")
         self._btn_suppr.pack(side=tk.RIGHT, padx=4)

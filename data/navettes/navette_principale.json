@@ -1,0 +1,12 @@
+{
+    "id": "navette_principale",
+    "nom": "Navette Principale",
+    "type": "coursier",
+    "capacite_max": 20,
+    "mode_depart": "hybride",
+    "frequence_depart_min": 30,
+    "priorite_urgents": true,
+    "vitesse_m_min": 80,
+    "pixels_par_minute": 40,
+    "position_labo_canvas": {"x": 710, "y": 390}
+}

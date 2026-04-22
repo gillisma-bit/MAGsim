@@ -52,6 +52,10 @@ class TechnicianState:
         self.office_x = x                       # coordonnées du bureau (pour retour fin de quart)
         self.office_y = y
         self.historique_bienetre = []           # [(jour, mecontentement), ...] pour les stats
+        # ── Pause déjeuner & garde ───────────────────────────────────────────
+        self.en_pause_dejeuner = False          # True pendant la fenêtre de pause déjeuner
+        self._garde_actif    = False            # True lors d'une intervention de garde active
+        self._garde_arrivee  = 0.0              # t SimPy d'arrivée au labo pendant la garde
 
     # ------------------------------------------------------------------
     def calculer_pct_erreur_effectif(self, heure_simpy=0.0, heure_debut=7.0):

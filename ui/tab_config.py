@@ -1,13 +1,20 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, colorchooser
-from ui.tab_horaires import FenetreHoraires
+from ui.dialog_rh import FenetreRH
+import ui.theme as theme
 
 class TabConfig:
     def __init__(self, parent, config_manager):
         self.parent = parent
         self.config_manager = config_manager
         self.selected_machine = None
-        
+
+        # --- DRAG & DROP ---
+        self._drag_machine = None   # nom de la machine en cours de drag
+        self._drag_last_x  = 0     # dernière position canvas x
+        self._drag_last_y  = 0     # dernière position canvas y
+        self._drag_moved   = False  # déplacement réel (vs simple clic)
+
         # --- PARAMÈTRES MÉTRIQUES ---
         self.grid_size = 50  # 1 carreau = 50px = 50cm
         self.mode = "SELECT" 
@@ -33,11 +40,12 @@ class TabConfig:
         self.charger_config_existante()
         
         # Bindings
-        self.canvas.bind("<Button-1>", self.on_canvas_click)
-        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        self.canvas.bind("<Button-1>",        self.on_canvas_click)
+        self.canvas.bind("<B1-Motion>",       self.on_canvas_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
 
     def setup_ui_elements(self):
-        ttk.Label(self.edit_frame, text="🏗️ ÉDITEUR MAGsim", font=("Segoe UI", 12, "bold")).pack(pady=(0, 10))
+        ttk.Label(self.edit_frame, text="🏗️ ÉDITEUR MAGsim", font=theme.FONT_TITLE).pack(pady=(0, 10))
         
         # MODES DE DESSIN
         frame_modes = ttk.LabelFrame(self.edit_frame, text="Outils de sol", padding=10)
@@ -50,49 +58,50 @@ class TabConfig:
         # Échelle du plan
         f_echelle = ttk.LabelFrame(self.edit_frame, text="📏 Échelle du plan", padding=8)
         f_echelle.pack(fill="x", pady=(8, 0))
-        ttk.Label(f_echelle, text="1 case =", font=("Segoe UI", 9)).grid(row=0, column=0, sticky="w")
+        ttk.Label(f_echelle, text="1 case =", font=theme.FONT_BODY).grid(row=0, column=0, sticky="w")
         self.ent_mpc = ttk.Entry(f_echelle, width=6)
         ent_mpc_val = self.config_manager.data.get("personnel", {}).get("metres_par_case", 3.0)
         self.ent_mpc.insert(0, ent_mpc_val)
         self.ent_mpc.grid(row=0, column=1, padx=4)
-        ttk.Label(f_echelle, text="mètres", font=("Segoe UI", 9)).grid(row=0, column=2, sticky="w")
+        ttk.Label(f_echelle, text="mètres", font=theme.FONT_BODY).grid(row=0, column=2, sticky="w")
         ttk.Button(f_echelle, text="✓ Appliquer",
                    command=self._sauver_echelle).grid(row=0, column=3, padx=(6, 0))
         ttk.Label(f_echelle, text="(1 case = 50 px)",
-                  foreground="gray", font=("Segoe UI", 8)).grid(
+                  foreground="gray", font=theme.FONT_NOTE).grid(
             row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
 
-        # Horaires du personnel
-        f_horaires = ttk.LabelFrame(self.edit_frame, text="🗓️ Horaires du personnel", padding=8)
+        # Personnel
+        f_horaires = ttk.LabelFrame(self.edit_frame, text="👥 Personnel", padding=8)
         f_horaires.pack(fill="x", pady=(8, 0))
         ttk.Button(
             f_horaires,
-            text="📅  Gérer les horaires",
-            command=self._ouvrir_horaires,
+            text="👥  Gérer le personnel",
+            command=self._ouvrir_rh,
         ).pack(fill="x", pady=2)
 
         ttk.Separator(self.edit_frame).pack(fill="x", pady=15)
 
         # GESTION DES PROCÉDURES
-        ttk.Label(self.edit_frame, text="🔬 PROCÉDURES", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(self.edit_frame, text="🔬 PROCÉDURES", font=theme.FONT_SECTION).pack(anchor="w")
         ttk.Button(self.edit_frame, text="⚙️ Gérer les procédures de tubes", command=self.ouvrir_editeur_workflows).pack(fill="x", pady=5)
 
         ttk.Separator(self.edit_frame).pack(fill="x", pady=15)
 
         # AJOUT MACHINE
-        ttk.Label(self.edit_frame, text="📦 MACHINE", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(self.edit_frame, text="📦 MACHINE", font=theme.FONT_SECTION).pack(anchor="w")
         self.ent_nom = ttk.Entry(self.edit_frame)
         self.ent_nom.pack(fill="x", pady=5)
         
-        self.combo_type = ttk.Combobox(self.edit_frame, values=["Centrifugeuse", "Automate", "Paillasse", "ENTREE", "SORTIE", "TECH_OFFICE"])
+        self.combo_type = ttk.Combobox(self.edit_frame, values=["Centrifugeuse", "Automate", "Paillasse", "ENTREE", "SORTIE", "REPOS"])
         self.combo_type.pack(fill="x", pady=5)
         self.combo_type.set("Centrifugeuse")
 
         ttk.Button(self.edit_frame, text="📍 Placer au centre", command=lambda: self.set_mode("PLACE_MACHINE")).pack(fill="x", pady=10)
 
         # Bouton Supprimer (en rouge pour la sécurité)
-        self.btn_suppr = tk.Button(self.edit_frame, text="🗑️ Supprimer la sélection", 
-                                   bg="#ec4a38", fg="white", font=("Segoe UI", 9, "bold"),
+        self.btn_suppr = tk.Button(self.edit_frame, text="🗑️ Supprimer la sélection",
+                                   bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
+                                   font=theme.FONT_BTN_DEL,
                                    command=self.supprimer_selection)
         self.btn_suppr.pack(fill="x", pady=5)
 
@@ -106,8 +115,18 @@ class TabConfig:
         self.config_manager.data["personnel"]["metres_par_case"] = mpc
         self.config_manager.sauvegarder()
 
-    def _ouvrir_horaires(self):
-        FenetreHoraires(self.parent, self.config_manager)
+    def _ouvrir_rh(self):
+        FenetreRH(self.parent, self.config_manager,
+                  refresh_callback=self._refresh_plan_machines)
+
+    def _refresh_plan_machines(self):
+        """Redessine uniquement les sprites machines (après ajout/suppression tech)."""
+        self.canvas.delete("machine")
+        machines = self.config_manager.get_machines()
+        for nom, m in machines.items():
+            if m["type"] == "TECH_OFFICE":
+                continue
+            self.dessiner_bloc_machine(m["coords"]["x"], m["coords"]["y"], nom, m["type"])
 
     def set_mode(self, mode):
         self.mode = mode
@@ -123,19 +142,81 @@ class TabConfig:
         x_c = self.canvas.canvasx(event.x)
         y_c = self.canvas.canvasy(event.y)
         col, row = int(x_c // self.grid_size), int(y_c // self.grid_size)
-        
+
         if self.mode == "PLACE_MACHINE":
             self.placer_machine_centree(col, row)
         elif self.mode in ["COUNTER", "WALL", "FLOOR"]:
             self.peindre_case(col, row)
-        else:
-            self.selectionner_objet(x_c, y_c)
+        else:  # SELECT — préparer un éventuel drag
+            self._drag_machine = None
+            self._drag_moved   = False
+            items = self.canvas.find_overlapping(x_c - 2, y_c - 2, x_c + 2, y_c + 2)
+            for item in items:
+                for t in self.canvas.gettags(item):
+                    if t.startswith("obj_"):
+                        self._drag_machine = t.replace("obj_", "")
+                        self._drag_last_x  = x_c
+                        self._drag_last_y  = y_c
+                        self.selected_machine = self._drag_machine
+                        self.canvas.config(cursor="fleur")
+                        return
 
     def on_canvas_drag(self, event):
         if self.mode in ["COUNTER", "WALL", "FLOOR"]:
             x = self.canvas.canvasx(event.x)
             y = self.canvas.canvasy(event.y)
             self.peindre_case(int(x // self.grid_size), int(y // self.grid_size))
+        elif self.mode == "SELECT" and self._drag_machine:
+            x_c = self.canvas.canvasx(event.x)
+            y_c = self.canvas.canvasy(event.y)
+            dx  = x_c - self._drag_last_x
+            dy  = y_c - self._drag_last_y
+            self.canvas.move(f"obj_{self._drag_machine}", dx, dy)
+            self._drag_last_x = x_c
+            self._drag_last_y = y_c
+            self._drag_moved  = True
+
+    def on_canvas_release(self, event):
+        """Finalise le drag (snap grille + sauvegarde) ou ouvre le popup (simple clic)."""
+        if self.mode != "SELECT" or self._drag_machine is None:
+            return
+
+        nom = self._drag_machine
+
+        if self._drag_moved:
+            # ── Snap au centre de la case la plus proche ────────────────────
+            bbox = self.canvas.bbox(f"obj_{nom}")
+            if bbox:
+                curr_cx = (bbox[0] + bbox[2]) / 2
+                curr_cy = (bbox[1] + bbox[3]) / 2
+                col = round((curr_cx - self.grid_size / 2) / self.grid_size)
+                row = round((curr_cy - self.grid_size / 2) / self.grid_size)
+                # S'assurer que la case reste dans le plan
+                col = max(0, col)
+                row = max(0, row)
+                snap_cx = col * self.grid_size + self.grid_size // 2
+                snap_cy = row * self.grid_size + self.grid_size // 2
+                # Déplacement résiduel pour aligner précisément
+                self.canvas.move(f"obj_{nom}", snap_cx - curr_cx, snap_cy - curr_cy)
+                # Sauvegarder la nouvelle position
+                machines = self.config_manager.get_machines()
+                if nom in machines:
+                    machines[nom]["coords"]["x"] = snap_cx
+                    machines[nom]["coords"]["y"] = snap_cy
+                    self.config_manager.sauvegarder()
+                    # Si c'est le marqueur REPOS, syncer dans personnel.zone_repos
+                    if machines[nom].get("type") == "REPOS":
+                        self.config_manager.data.setdefault("personnel", {})["zone_repos"] = {
+                            "x": snap_cx, "y": snap_cy
+                        }
+                        self.config_manager.sauvegarder()
+        else:
+            # Simple clic : ouvrir le popup de configuration
+            self.ouvrir_popup_machine()
+
+        self._drag_machine = None
+        self._drag_moved   = False
+        self.canvas.config(cursor="")
 
     def peindre_case(self, col, row):
         tag_case = f"tile_{col}_{row}"
@@ -174,7 +255,8 @@ class TabConfig:
             "ENTREE": "#2ecc71",        # Vert (Source)
             "SORTIE": "#e74c3c",        # Rouge (Puits)
             "Paillasse": "#95a5a6",     # Gris
-            "TECH_OFFICE": "#95a5a6"    # Gris pour bureau tech
+            "TECH_OFFICE": "#95a5a6",   # Gris pour bureau tech
+            "REPOS": "#8e44ad",         # Violet : zone de repos
         }
         color = couleurs.get(type_m, "#34495e")
         
@@ -186,15 +268,13 @@ class TabConfig:
         self.canvas.create_text(x, y, text=nom[:3], fill="white", font=("Arial", 8, "bold"), tags=("machine", tag))
 
     def selectionner_objet(self, x, y):
-        items = self.canvas.find_overlapping(x-2, y-2, x+2, y+2)
+        """Sélectionne la machine sous le curseur (sans ouvrir le popup)."""
+        items = self.canvas.find_overlapping(x - 2, y - 2, x + 2, y + 2)
         self.selected_machine = None
         for item in items:
-            tags = self.canvas.gettags(item)
-            for t in tags:
+            for t in self.canvas.gettags(item):
                 if t.startswith("obj_"):
                     self.selected_machine = t.replace("obj_", "")
-                    # OUVERTURE DU POPUP
-                    self.ouvrir_popup_machine()
                     return
 
     def ouvrir_popup_machine(self):
@@ -203,7 +283,7 @@ class TabConfig:
         
         popup = tk.Toplevel(self.parent)
         popup.title(f"Config : {self.selected_machine}")
-        popup.geometry("550x700")
+        popup.geometry("780x700")
         popup.grab_set()
 
         ttk.Label(popup, text=f"⚙️ {type_m.upper()} : {self.selected_machine}", 
@@ -466,197 +546,36 @@ class TabConfig:
             frm_bas.pack(fill="x", padx=20, pady=(2, 15))
             ttk.Button(frm_bas, text="💾 SAUVER L'ENTRÉE", command=save_entree).pack(pady=6)
 
-        # --- CAS 3 : TECH_OFFICE ---
+        # --- CAS 3 : TECH_OFFICE → rediriger vers la fenêtre RH ---
         elif type_m == "TECH_OFFICE":
-            ttk.Label(popup, text=f"Bureau : {self.selected_machine}", font=("Segoe UI", 11, "bold")).pack(pady=(15, 5))
+            popup.destroy()
+            FenetreRH(self.parent, self.config_manager,
+                      refresh_callback=self._refresh_plan_machines)
+            return
 
-            # ── Cadre principal ──────────────────────────────────────────────────
-            f_t = ttk.LabelFrame(popup, text="👤 Caractéristiques du technicien", padding=12)
-            f_t.pack(fill="x", padx=20, pady=10)
+        # --- placeholder inaccessible (évite les variables non définies) ---
+        if False:
+            pass
 
-            # Nom / identifiant
-            ttk.Label(f_t, text="Nom / identifiant :").grid(row=0, column=0, sticky="w", pady=3)
-            ent_nom = ttk.Entry(f_t, width=20)
-            ent_nom.insert(0, m_data.get("nom", ""))
-            ent_nom.grid(row=0, column=1, padx=5)
-            ttk.Label(f_t, text="Affiché dans les rapports et indicateurs de bien-être",
-                      foreground="gray").grid(row=0, column=2, padx=6)
+        # --- CAS 4 : REPOS ---
+        elif type_m == "REPOS":
+            ttk.Label(
+                popup,
+                text="🛌  Zone de repos",
+                font=("Segoe UI", 12, "bold"),
+            ).pack(pady=(20, 4))
+            ttk.Label(
+                popup,
+                text="Ce marqueur définit l'endroit où les techniciens\n"
+                     "se rendent pendant leur pause déjeuner.\n\n"
+                     "Déplacez-le sur le plan pour le repositionner.\n"
+                     "Les coordonnées sont sauvegardées automatiquement.",
+                justify="center",
+                wraplength=260,
+            ).pack(pady=10, padx=20)
+            ttk.Button(popup, text="Fermer", command=popup.destroy).pack(pady=8)
 
-            # Expérience
-            ttk.Label(f_t, text="Expérience (1 = novice  …  5 = expert) :").grid(
-                row=1, column=0, sticky="w", pady=3)
-            ent_exp = ttk.Entry(f_t, width=8)
-            ent_exp.insert(0, m_data.get("experience", 3))
-            ent_exp.grid(row=1, column=1, padx=5)
-            ttk.Label(f_t, text="Multiplie les erreurs : ×2.0 → ×0.4",
-                      foreground="gray").grid(row=1, column=2, padx=6)
-
-            # Âge
-            ttk.Label(f_t, text="Âge (années) :").grid(row=2, column=0, sticky="w", pady=3)
-            ent_age = ttk.Entry(f_t, width=8)
-            ent_age.insert(0, m_data.get("age", 35))
-            ent_age.grid(row=2, column=1, padx=5)
-            ttk.Label(f_t, text="Jeune ↑ vitesse + ↑ erreurs  |  Senior ↓ vitesse + ↓ erreurs",
-                      foreground="gray").grid(row=2, column=2, padx=6)
-
-            # Taux d'erreur de base
-            ttk.Label(f_t, text="Taux d'erreur de base (0.0 – 1.0) :").grid(
-                row=3, column=0, sticky="w", pady=3)
-            ent_pct = ttk.Entry(f_t, width=8)
-            ent_pct.insert(0, m_data.get("pct_erreur_tech", 0.0))
-            ent_pct.grid(row=3, column=1, padx=5)
-            ttk.Label(f_t, text="Modulé par expérience · âge · fatigue · heure du jour",
-                      foreground="gray").grid(row=3, column=2, padx=6)
-
-            # Seuil de surcharge (affiché en %)
-            ttk.Label(f_t, text="Seuil de surcharge (0 – 100 %) :").grid(
-                row=4, column=0, sticky="w", pady=3)
-            ent_seuil = ttk.Entry(f_t, width=8)
-            ent_seuil.insert(0, int(float(m_data.get("seuil_charge_fatigue", 0.70)) * 100))
-            ent_seuil.grid(row=4, column=1, padx=5)
-            ttk.Label(f_t, text="Au-dessus de ce % de capacité, la fatigue commence à monter",
-                      foreground="gray").grid(row=4, column=2, padx=6)
-
-            # Taux de montée de fatigue
-            ttk.Label(f_t, text="Taux de montée de fatigue :").grid(
-                row=5, column=0, sticky="w", pady=3)
-            ent_taux = ttk.Entry(f_t, width=8)
-            ent_taux.insert(0, m_data.get("taux_montee_fatigue", 0.01))
-            ent_taux.grid(row=5, column=1, padx=5)
-            ttk.Label(f_t, text="Incrément par tube livré en surcharge (ex. 0.01)",
-                      foreground="gray").grid(row=5, column=2, padx=6)
-
-            # Taux de récupération nocturne
-            ttk.Label(f_t, text="Récupération nocturne (%) :").grid(
-                row=6, column=0, sticky="w", pady=3)
-            ent_recup = ttk.Entry(f_t, width=8)
-            ent_recup.insert(0, int(float(m_data.get("taux_recuperation_nuit", 0.15)) * 100))
-            ent_recup.grid(row=6, column=1, padx=5)
-            ttk.Label(f_t, text="% du mécontentement effacé chaque nuit de repos (déf. 15 %)",
-                      foreground="gray").grid(row=6, column=2, padx=6)
-
-            # Capacité max tubes portés
-            ttk.Label(f_t, text="Capacité max (tubes portés simultanément) :").grid(
-                row=7, column=0, sticky="w", pady=3)
-            ent_cap = ttk.Entry(f_t, width=8)
-            ent_cap.insert(0, m_data.get("capacite_max_tubes", 10))
-            ent_cap.grid(row=7, column=1, padx=5)
-
-            # ── Section personnel global (charge cible + quarts) ─────────────────
-            f_pers = ttk.LabelFrame(popup, text="🗓️ Quarts de travail & charge", padding=12)
-            f_pers.pack(fill="x", padx=20, pady=(0, 5))
-
-            personnel = self.config_manager.data.get("personnel", {})
-
-            ttk.Label(f_pers, text="Capacité journalière normale (tubes/jour) :").grid(
-                row=0, column=0, sticky="w", pady=3)
-            ent_cap_jour = ttk.Entry(f_pers, width=8)
-            ent_cap_jour.insert(0, personnel.get("capacite_journaliere_normale", 150))
-            ent_cap_jour.grid(row=0, column=1, padx=5)
-            ttk.Label(f_pers, text="Référence pour calculer la charge effective",
-                      foreground="gray").grid(row=0, column=2, padx=6)
-
-            ttk.Label(f_pers, text="Alerte accumulation entrée (nb tubes) :").grid(
-                row=1, column=0, sticky="w", pady=3)
-            ent_seuil_acc = ttk.Entry(f_pers, width=8)
-            ent_seuil_acc.insert(0, personnel.get("seuil_accumulation_alerte", 20))
-            ent_seuil_acc.grid(row=1, column=1, padx=5)
-            ttk.Label(f_pers, text="Déclenche la montée de cadence des techs",
-                      foreground="gray").grid(row=1, column=2, padx=6)
-
-            # Quarts : tableau lecture / info (édition complète dans un futur dialog dédié)
-            quarts = personnel.get("quarts", [])
-            if quarts:
-                ttk.Label(f_pers, text="Quarts définis :").grid(
-                    row=2, column=0, sticky="nw", pady=(6, 2))
-                txt_quarts = ""
-                for q in quarts:
-                    garde_tag = "  [GARDE]" if q.get("garde") else ""
-                    techids = ", ".join(q.get("tech_ids", []))
-                    txt_quarts += f"• {q['nom']} {q['heure_debut']}h–{q['heure_fin']}h : {techids}{garde_tag}\n"
-                ttk.Label(f_pers, text=txt_quarts.strip(), foreground="#555",
-                          font=("Segoe UI", 9)).grid(row=2, column=1, columnspan=2,
-                                                       sticky="w", padx=5)
-            ttk.Label(f_pers, text="(Édition complète des quarts : menu Configuration → Personnel)",
-                      foreground="#aaa", font=("Segoe UI", 8, "italic")).grid(
-                row=3, column=0, columnspan=3, sticky="w", pady=(2, 0))
-
-            # ── Aperçu indicatif ─────────────────────────────────────────────────
-            f_preview = ttk.LabelFrame(popup, text="🔍 Aperçu (expérience 3 · âge 35 · sans fatigue · 9h)",
-                                       padding=8)
-            f_preview.pack(fill="x", padx=20, pady=(0, 5))
-            lbl_preview = ttk.Label(f_preview, text="—", font=("Segoe UI", 9, "italic"))
-            lbl_preview.pack()
-
-            def _refresh_preview(*_):
-                try:
-                    _facteurs_exp = {1: 2.0, 2: 1.5, 3: 1.0, 4: 0.70, 5: 0.40}
-                    exp = max(1, min(5, int(ent_exp.get())))
-                    age = max(18, min(80, int(ent_age.get())))
-                    base = float(ent_pct.get())
-                    f_e = _facteurs_exp.get(exp, 1.0)
-                    f_a = (1.35 if age <= 28
-                           else 1.35 - (age - 28) / 12 * 0.35 if age <= 40
-                           else 1.0 - (age - 40) / 15 * 0.20 if age <= 55
-                           else max(0.60, 0.80 - (age - 55) / 10 * 0.20))
-                    pct_eff = min(1.0, base * f_e * f_a)
-                    # Vitesse age
-                    if age <= 28:
-                        vf = 1.10
-                    elif age <= 45:
-                        vf = 1.10 - (age - 28) / 17 * 0.15
-                    elif age <= 60:
-                        vf = 0.95 - (age - 45) / 15 * 0.15
-                    else:
-                        vf = max(0.70, 0.80 - (age - 60) / 10 * 0.10)
-                    v_eff = 8.0 * vf
-                    lbl_preview.config(
-                        text=f"Taux d'erreur effectif ≈ {pct_eff*100:.2f} %   |   "
-                             f"Vitesse ≈ {v_eff:.1f} px/tick   (à 9h, reposé)"
-                    )
-                except (ValueError, TypeError):
-                    lbl_preview.config(text="— valeurs invalides —")
-
-            ent_exp.bind("<KeyRelease>", _refresh_preview)
-            ent_age.bind("<KeyRelease>", _refresh_preview)
-            ent_pct.bind("<KeyRelease>", _refresh_preview)
-            _refresh_preview()
-
-            # ── Sauvegarde ───────────────────────────────────────────────────────
-            def save_tech():
-                try:
-                    nom = ent_nom.get().strip()
-                    exp = max(1, min(5, int(ent_exp.get())))
-                    age = max(18, min(80, int(ent_age.get())))
-                    pct = float(ent_pct.get())
-                    seuil = float(ent_seuil.get()) / 100.0
-                    taux = float(ent_taux.get())
-                    recup_nuit = max(0.0, min(1.0, float(ent_recup.get()) / 100.0))
-                    cap_max = max(1, int(ent_cap.get()))
-                    m_data["nom"] = nom
-                    m_data["experience"] = exp
-                    m_data["age"] = age
-                    m_data["pct_erreur_tech"] = pct
-                    m_data["seuil_charge_fatigue"] = seuil
-                    m_data["taux_montee_fatigue"] = taux
-                    m_data["taux_recuperation_nuit"] = recup_nuit
-                    m_data["capacite_max_tubes"] = cap_max
-                    # Sauvegarder les paramètres personnel globaux
-                    if "personnel" not in self.config_manager.data:
-                        self.config_manager.data["personnel"] = {}
-                    cap_jour = max(1, int(ent_cap_jour.get()))
-                    seuil_acc = max(1, int(ent_seuil_acc.get()))
-                    self.config_manager.data["personnel"]["capacite_journaliere_normale"] = cap_jour
-                    self.config_manager.data["personnel"]["seuil_accumulation_alerte"] = seuil_acc
-                    self.config_manager.sauvegarder()
-                    popup.destroy()
-                except ValueError:
-                    messagebox.showwarning("Erreur de saisie", "Valeurs numériques invalides.")
-
-            ttk.Button(popup, text="💾 SAUVER TECHNICIEN", command=save_tech,
-                       padding=10).pack(pady=12)
-
-        # --- CAS 4 : SORTIE ---
+        # --- CAS 5 : SORTIE et autres ---
         else:
             ttk.Label(popup, text="Zone de validation finale (Sortie)").pack(pady=20)
             ttk.Button(popup, text="Fermer", command=popup.destroy).pack()
@@ -695,9 +614,11 @@ class TabConfig:
             self.peindre_case(c, r)
             self.mode = old_mode
             
-        # 2. Les Machines
+        # 2. Les Machines (on ne dessine PAS les TECH_OFFICE sur le plan)
         machines = self.config_manager.get_machines()
         for nom, m in machines.items():
+            if m["type"] == "TECH_OFFICE":
+                continue
             self.dessiner_bloc_machine(m["coords"]["x"], m["coords"]["y"], nom, m["type"])
 
     def supprimer_selection(self):
@@ -724,11 +645,18 @@ class TabConfig:
         """Ouvre la fenêtre d'édition des procédures de tubes"""
         popup = tk.Toplevel(self.parent)
         popup.title("Éditeur de Procédures pour tubes")
-        popup.geometry("700x600")
+        popup.geometry("900x680")
+        popup.minsize(800, 600)
         popup.grab_set()
 
         ttk.Label(popup, text="🧪 Définissez les procédures pour chaque type de tube", 
                   font=("Segoe UI", 12, "bold")).pack(pady=10)
+
+        # --- BOUTONS DE SAUVEGARDE (ancrés en bas, toujours visibles) ---
+        frame_save = ttk.Frame(popup)
+        frame_save.pack(side=tk.BOTTOM, fill="x", pady=10, padx=10)
+        ttk.Button(frame_save, text="💾 SAUVER", command=lambda: self.sauver_workflow()).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_save, text="Fermer", command=popup.destroy).pack(side=tk.LEFT, padx=5)
 
         # --- FRAME GAUCHE : liste des types ---
         frame_left = ttk.Frame(popup)
@@ -798,6 +726,13 @@ class TabConfig:
         ttk.Label(f_lot, text="(taille aléatoire U[min, max] à chaque arrivée)",
                   foreground="gray", font=("Arial", 8)).grid(row=2, column=2, padx=2)
 
+        ttk.Label(f_lot, text="Durée de validité (min, 0=illimitée) :",
+                  font=("Arial", 9)).grid(row=3, column=0, sticky="w", pady=2)
+        self.ent_validite = ttk.Entry(f_lot, width=7)
+        self.ent_validite.grid(row=3, column=1, padx=4)
+        ttk.Label(f_lot, text="(ex: 240 = 4 h max avant péremption)",
+                  foreground="gray", font=("Arial", 8)).grid(row=3, column=2, padx=2)
+
         ttk.Label(frame_right, text="Étapes du workflow :", font=("Arial", 9, "bold")).pack(anchor="w", pady=(15, 5))
         
         # Listbox pour les étapes
@@ -812,12 +747,6 @@ class TabConfig:
 
         # Binding pour mettre à jour la couleur en direct
         self.ent_couleur.bind("<KeyRelease>", lambda e: self.update_color_preview())
-
-        # --- BOUTONS DE SAUVEGARDE ---
-        frame_save = ttk.Frame(popup)
-        frame_save.pack(fill="x", pady=10)
-        ttk.Button(frame_save, text="💾 SAUVER", command=lambda: self.sauver_workflow()).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_save, text="Fermer", command=popup.destroy).pack(side=tk.LEFT, padx=5)
 
         # Charger la liste des types
         self.actualiser_liste_types()
@@ -858,6 +787,9 @@ class TabConfig:
 
         self.ent_lot_max.delete(0, tk.END)
         self.ent_lot_max.insert(0, str(workflow.get("taille_lot_max", 1)))
+
+        self.ent_validite.delete(0, tk.END)
+        self.ent_validite.insert(0, str(workflow.get("duree_validite_min", 0)))
 
         # Remplir les étapes
         self.listbox_etapes.delete(0, tk.END)
@@ -963,14 +895,16 @@ class TabConfig:
             pct_urgent = float(self.ent_pct_urgent.get())
             lot_min    = max(1, int(self.ent_lot_min.get()))
             lot_max    = max(lot_min, int(self.ent_lot_max.get()))
+            validite   = max(0, int(self.ent_validite.get()))
         except ValueError:
-            messagebox.showwarning("Erreur", "Valeurs numériques invalides (lot / urgence).")
+            messagebox.showwarning("Erreur", "Valeurs numériques invalides (lot / urgence / validité).")
             return
 
         self.config_manager.ajouter_type_tube(
             nom_type, couleur, etapes,
             pct_urgent=pct_urgent,
             taille_lot_min=lot_min,
-            taille_lot_max=lot_max
+            taille_lot_max=lot_max,
+            duree_validite_min=validite,
         )
         messagebox.showinfo("Succès", f"Procédure '{nom_type}' sauvegardée !")
