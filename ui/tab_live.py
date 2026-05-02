@@ -2464,52 +2464,76 @@ class TabLive:
                     continue
 
             # --- Priorité 1 : tubes ayant fini un traitement, à récupérer ---
-            # Les tubes restent dans output_queues (boîtes vertes visibles) jusqu'à
-            # l'arrivée physique du tech. On évite le double-claim en ignorant les tubes
-            # déjà portés par un autre technicien.
+            # Correction bug multi-machine : le tech se déplace vers UNE SEULE machine
+            # par itération — la plus prioritaire.  Les tubes des autres machines
+            # restent visibles dans output_queues et seront ramassés au prochain tour.
+            # Avant : tous les tubes de toutes les machines étaient retirés d'un coup
+            # même si le tech n'était physiquement allé qu'à la première machine.
             deja_portes = {id(t) for other in self.technicians if other is not tech
                            for t in other.carried_tubes}
 
-            tubes_finis = []
-            noms_a_vider = []
+            # Trouver la machine la plus prioritaire (tube avec le score EDD le plus élevé)
+            mu, mv, ma = self.coordinateur.poids_courants
+            meilleure_machine = None
+            meilleur_score = -1.0
             for nom_m in list(self.output_queues.keys()):
                 disponibles = [t for t in self.output_queues[nom_m]
                                if id(t) not in deja_portes]
-                if disponibles:
-                    tubes_finis.extend(disponibles)
-                    noms_a_vider.append(nom_m)
+                if not disponibles:
+                    continue
+                score_m = max(
+                    _score_priorite(t, self.env.now, mu, mv, ma) for t in disponibles)
+                if score_m > meilleur_score:
+                    meilleur_score = score_m
+                    meilleure_machine = nom_m
 
-            if tubes_finis:
-                # Trier par ancienneté : les tubes les plus vieux livrés en premier
-                tubes_finis.sort(key=lambda t: t.get("arrivee", 0))
-                # Claim : assigner les tubes AU TECH dès maintenant, mais les laisser dans
+            if meilleure_machine is not None:
+                tubes_finis = [t for t in self.output_queues[meilleure_machine]
+                               if id(t) not in deja_portes]
+                # Trier par priorité décroissante avant le trajet
+                tubes_finis.sort(
+                    key=lambda t: -_score_priorite(t, self.env.now, mu, mv, ma))
+
+                # Claim : assigner les tubes AU TECH maintenant, les laisser dans
                 # output_queues pour que les boîtes vertes restent visibles pendant le trajet
                 tech.carried_tubes = tubes_finis
 
-                # Se rendre près du premier tube fini (il est à sa machine source)
+                # Se rendre à la machine source
+                m_src = machines.get(meilleure_machine)
                 if not self.headless:
+                    # Essayer d'abord via les coordonnées canvas du premier tube
                     premier = tubes_finis[0]
+                    dest_trouvee = False
                     if premier.get("id") and self.canvas.winfo_exists():
                         coords = self.canvas.coords(premier["id"])
                         if coords:
                             tx = (coords[0] + coords[2]) / 2
                             ty = (coords[1] + coords[3]) / 2
-                            libre_x, libre_y = self.trouver_case_libre_proche(tx, ty, from_x=tech.x, from_y=tech.y)
-                            yield self.env.process(self.deplacer_vers(tech, libre_x, libre_y))
-                else:
-                    # Headless : se déplacer vers la machine source via ses coordonnées
-                    if noms_a_vider:
-                        m_src = machines.get(noms_a_vider[0])
-                        if m_src:
                             libre_x, libre_y = self.trouver_case_libre_proche(
-                                m_src["coords"]["x"], m_src["coords"]["y"], from_x=tech.x, from_y=tech.y)
-                            yield self.env.process(self.deplacer_vers(tech, libre_x, libre_y))
+                                tx, ty, from_x=tech.x, from_y=tech.y)
+                            yield self.env.process(
+                                self.deplacer_vers(tech, libre_x, libre_y))
+                            dest_trouvee = True
+                    if not dest_trouvee and m_src:
+                        libre_x, libre_y = self.trouver_case_libre_proche(
+                            m_src["coords"]["x"], m_src["coords"]["y"],
+                            from_x=tech.x, from_y=tech.y)
+                        yield self.env.process(
+                            self.deplacer_vers(tech, libre_x, libre_y))
+                else:
+                    # Headless : déplacement via coordonnées config
+                    if m_src:
+                        libre_x, libre_y = self.trouver_case_libre_proche(
+                            m_src["coords"]["x"], m_src["coords"]["y"],
+                            from_x=tech.x, from_y=tech.y)
+                        yield self.env.process(
+                            self.deplacer_vers(tech, libre_x, libre_y))
 
-                # Le tech est maintenant à la machine : retirer les tubes qu'il emporte
-                tubes_finis_set = set(id(t) for t in tubes_finis)
-                for nom_m in noms_a_vider:
-                    self.output_queues[nom_m] = [t for t in self.output_queues[nom_m]
-                                                 if id(t) not in tubes_finis_set]
+                # Tech arrivé à la machine : retirer UNIQUEMENT les tubes de cette machine
+                tubes_finis_ids = {id(t) for t in tubes_finis}
+                self.output_queues[meilleure_machine] = [
+                    t for t in self.output_queues[meilleure_machine]
+                    if id(t) not in tubes_finis_ids]
 
                 if not self.headless:
                     for tube in tech.carried_tubes:
@@ -2518,7 +2542,8 @@ class TabLive:
                                               tech.x-6, tech.y-6,
                                               tech.x+6, tech.y+6)
 
-                yield self.env.process(self._livrer_tubes(tech, tech.carried_tubes, machines, sorties))
+                yield self.env.process(
+                    self._livrer_tubes(tech, tech.carried_tubes, machines, sorties))
                 tech.carried_tubes = []
                 continue
 
