@@ -25,17 +25,29 @@ def _score_priorite(tube, now, mult_urgence=1.0, mult_validite=1.0, mult_age=1.0
     mult_urgence sert uniquement à amplifier le score INTRA-URGENTS : un tube
     urgent reste toujours devant un tube non-urgent, mais parmi les urgents
     l'ordre dépend du reste du score × mult_urgence.
+
+    Calcul EDD (Earliest Deadline First) :
+      - Si deadline absolue présente (t_generation + duree_validite) :
+        pct = 1 - slack/duree_totale  →  reflète l'urgence depuis la CRÉATION
+        (plus précis que age/validite qui comptait depuis l'arrivée labo)
+      - Sinon fallback : age/validite depuis arrivée labo (tubes sans deadline).
     """
-    age      = now - tube.get("arrivee", now)
     validite = tube.get("duree_validite", 0)
-    pct      = (age / validite) if validite > 0 else 0.0
+    deadline = tube.get("deadline", 0)
+    if deadline > 0 and validite > 0:
+        slack = deadline - now                  # temps restant avant péremption
+        pct   = max(0.0, 1.0 - slack / validite)  # 0 à la génération → >1 si périmé
+    else:
+        age  = now - tube.get("arrivee", now)
+        pct  = (age / validite) if validite > 0 else 0.0
+    age_abs = now - tube.get("t_generation", tube.get("arrivee", now))
     # Urgents : flag absolu 1_000_000 + score intra-urgents amplifié par mult_urgence
     # Non-urgents : score validité + ancienneté seulement
     if tube.get("urgent"):
         return (1_000_000.0
-                + (pct * 1_000.0 * mult_validite + age * mult_age) * mult_urgence)
+                + (pct * 1_000.0 * mult_validite + age_abs * mult_age) * mult_urgence)
     else:
-        return pct * 1_000.0 * mult_validite + age * mult_age
+        return pct * 1_000.0 * mult_validite + age_abs * mult_age
 
 
 def _inserer_par_priorite(queue, tube, now, mult_urgence=1.0, mult_validite=1.0, mult_age=1.0):
@@ -1871,6 +1883,7 @@ class TabLive:
                     "couleur":        conf.get("couleur", "#3498db"),
                     "arrivee":        self.env.now,
                     "t_generation":   self.env.now,
+                    "deadline":       self.env.now + _dv if _dv > 0 else 0,
                     "urgent":         random.random() < float(fconf.get("pct_urgent", 0.05)),
                     "duree_validite": _dv,
                     "fournisseur":    fid,
@@ -2106,6 +2119,8 @@ class TabLive:
                         "workflow":       list(conf.get("workflow", [])),
                         "couleur":        conf.get("couleur", "#3498db"),
                         "arrivee":        self.env.now,
+                        "t_generation":   self.env.now,
+                        "deadline":       self.env.now + _dv if _dv > 0 else 0,
                         "urgent":         random.random() < conf.get("pct_urgent", 0.0),
                         "duree_validite": _dv,
                     }
@@ -2639,7 +2654,10 @@ class TabLive:
                         # workflow[0], ce qui permet d'inclure la machine courante dans le calcul.
                         _dv = tube.get("duree_validite", 0)
                         if _dv > 0:
-                            _validite_restante = _dv - (self.env.now - tube.get("arrivee", self.env.now))
+                            # Utilise la deadline absolue si disponible (plus précis que arrivee)
+                            _dl = tube.get("deadline", 0)
+                            _validite_restante = (_dl - self.env.now) if _dl > 0 else (
+                                _dv - (self.env.now - tube.get("arrivee", self.env.now)))
                             # étapes restantes APRÈS la machine courante
                             _workflow_apres = tube.get("workflow", [])[1:]
                             _duree_sim = self._estimer_duree_workflow(
@@ -3008,7 +3026,9 @@ class TabLive:
             for _tube_pred in batch:
                 _dv_pred = _tube_pred.get("duree_validite", 0)
                 if _dv_pred > 0:
-                    _val_rest = _dv_pred - (self.env.now - _tube_pred.get("arrivee", self.env.now))
+                    _dl_pred = _tube_pred.get("deadline", 0)
+                    _val_rest = (_dl_pred - self.env.now) if _dl_pred > 0 else (
+                        _dv_pred - (self.env.now - _tube_pred.get("arrivee", self.env.now)))
                     # temps machine courante (SimPy) + temps étapes restantes
                     _duree_pred = (temps / 10) + self._estimer_duree_workflow(
                         _tube_pred.get("workflow", []), _mach_cfg_pred)
