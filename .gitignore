@@ -29,6 +29,9 @@ Thumbs.db
 *.log
 *.tmp
 
+# Secrets — ne jamais commiter les tokens API
+data/config_api.json
+
 # Base de données SQLite (données locales, pas du code)
 *.db
 *.db-shm
