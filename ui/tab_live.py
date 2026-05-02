@@ -125,6 +125,10 @@ class TabLive:
         self.headless = False  # True = simulation accélérée sans animation (mode goulots)
         self.turbo = False  # True = 10 pas SimPy par tick (×10 vitesse)
         self._sol_cache = None  # Cache du sol grid, initialisé au lancement de la simulation
+        self._lab_col_min = 0   # Périmètre labo (calculé depuis sol à l'init du cache)
+        self._lab_col_max = 60
+        self._lab_row_min = 0
+        self._lab_row_max = 40
         self.heure_debut_sim = 7.0  # Heure de démarrage (lue depuis config ENTREE)
         self.panne_machines = set()     # noms des machines actuellement en panne
         self.paillasse_analyste = set()  # noms des Paillasses avec un tech actuellement à poste
@@ -478,7 +482,7 @@ class TabLive:
 
                 # Créer l'environnement SimPy et lancer les processus
                 self.env = simpy.Environment()
-                self._sol_cache = self.config_manager.data.get("sol", {})  # cache sol
+                self._init_sol_cache()  # sol + périmètre labo
                 self.navette_queues     = {}
                 self.navette_stats      = {}
                 self.navette_en_transit = {}
@@ -741,7 +745,7 @@ class TabLive:
                     self.technicians.append(tech)
 
                 self.env = simpy.Environment()
-                self._sol_cache = self.config_manager.data.get("sol", {})
+                self._init_sol_cache()  # sol + périmètre labo
                 self.navette_queues     = {}
                 self.navette_stats      = {}
                 self.navette_en_transit = {}
@@ -940,7 +944,7 @@ class TabLive:
             
             # Démarrer SimPy
             self.env = simpy.Environment()
-            self._sol_cache = self.config_manager.data.get("sol", {})  # cache invalide/rafraichi
+            self._init_sol_cache()  # sol + périmètre labo rafraîchi
             # Initialiser heure_debut_sim depuis la config ENTREE
             entrees_cfg = [m for m in machines.values() if m["type"] == "ENTREE"]
             self.heure_debut_sim = entrees_cfg[0].get("heure_debut", 7.0) if entrees_cfg else 7.0
@@ -1124,19 +1128,65 @@ class TabLive:
         if self.canvas.winfo_exists() and ind_id:
             self.canvas.itemconfig(ind_id, fill="", outline="")
 
+    def _init_sol_cache(self):
+        """Initialise le cache du sol et calcule le périmètre du labo.
+
+        Appelé à chaque démarrage/reset de simulation.  Le périmètre est
+        déduit automatiquement de la boîte englobante du dict `sol` (marge
+        +1 case de chaque côté pour ne pas couper les bordures).
+
+        Override manuel possible dans config_mag.json :
+          "labo_bounds": {"col_min": 0, "col_max": 25, "row_min": 0, "row_max": 23}
+        """
+        self._sol_cache = self.config_manager.data.get("sol", {})
+        _override = self.config_manager.data.get("labo_bounds", {})
+        if _override:
+            self._lab_col_min = int(_override.get("col_min", 0))
+            self._lab_col_max = int(_override.get("col_max", 60))
+            self._lab_row_min = int(_override.get("row_min", 0))
+            self._lab_row_max = int(_override.get("row_max", 40))
+        elif self._sol_cache:
+            _keys = self._sol_cache.keys()
+            _cols = [int(k.split("_")[0]) for k in _keys]
+            _rows = [int(k.split("_")[1]) for k in _keys]
+            # Marge +1 pour que les cases de bordure restent accessibles
+            self._lab_col_min = max(0, min(_cols) - 1)
+            self._lab_col_max = max(_cols) + 1
+            self._lab_row_min = max(0, min(_rows) - 1)
+            self._lab_row_max = max(_rows) + 1
+        else:
+            # Fallback : canvas entier (comportement historique si sol vide)
+            self._lab_col_min, self._lab_col_max = 0, 60
+            self._lab_row_min, self._lab_row_max = 0, 40
+
     def trouver_chemin_astar(self, start_x, start_y, goal_x, goal_y):
         """Calcule un chemin A* en pixels en évitant COUNTER et WALL.
 
         Utilise un dict came_from pour le backtracking : O(M log M) au lieu de
         O(M²) — la version précédente stockait path+[nœud] dans chaque entrée
         du heap, créant une copie de liste à chaque expansion.
+
+        Le périmètre du labo borne l'espace de recherche : aucun nœud hors de
+        la boîte englobante du dict `sol` n'est jamais expansé.  Sans cette
+        borne, le canvas 3000×2000 px → 60×40 = 2400 cases seraient
+        potentiellement explorées (cases hors labo absentes de sol = walkable
+        par défaut).  Avec la borne, le worst-case est limité aux ~528 cases
+        du labo réel, soit ~78 % de réduction de l'espace de recherche.
+
+        La borne est calculée une seule fois depuis `sol` à l'initialisation du
+        cache.  Override possible via `labo_bounds` dans config_mag.json :
+          "labo_bounds": {"col_min": 0, "col_max": 23, "row_min": 0, "row_max": 21}
         """
         CELL = 50
         if self._sol_cache is None:
-            self._sol_cache = self.config_manager.data.get("sol", {})
+            self._init_sol_cache()
         sol = self._sol_cache
 
         def walkable(col, row):
+            # Hors périmètre labo → jamais walkable
+            if not (self._lab_col_min <= col <= self._lab_col_max
+                    and self._lab_row_min <= row <= self._lab_row_max):
+                return False
             cle = f"{col}_{row}"
             return cle not in sol or sol[cle] not in ("COUNTER", "WALL")
 
