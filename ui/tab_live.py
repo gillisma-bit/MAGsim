@@ -5,6 +5,7 @@ import math
 import random
 import heapq
 import bisect
+from collections import deque
 from core.technician import TechnicianState
 from core.stats_aggregator import StatsAggregator
 from core.coordinateur_stress import CoordonnateurStress
@@ -91,20 +92,24 @@ class TabLive:
         self.mouvement_interrompu = False  # conservé pour compatibilité (unused en multi-tech)
 
         # Collecte des métriques pour l'onglet goulots
-        self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
-                              "transit_time_avg": [], "transit_time_rolling": [],
-                              "transit_time_pending_max": [],
-                              "rejetes": [], "degrades": [], "pannes": {},
+        _MX = 43_200  # 60 jours @ 1 pt / 2 min
+        self.stats_history = {"time": deque(maxlen=_MX), "queues": {}, "output": {}, "busy": {}, "entry": deque(maxlen=_MX),
+                              "transit_time_avg": deque(maxlen=_MX), "transit_time_rolling": deque(maxlen=_MX),
+                              "transit_time_pending_max": deque(maxlen=_MX),
+                              "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX), "pannes": {},
                               "distances_tech": {}, "bienetre": {},
                               "arrivees_par_heure": {},
+                              "arrivees_par_heure_par_service": {},
                               "events_arret_maladie": [],
-                              "stress_events": []}
+                              "stress_events": deque(maxlen=10_000),
+                              "anticipations": deque(maxlen=2_000)}
         self.aggregator = StatsAggregator()
         self.coordinateur = CoordonnateurStress(intervalle_min=15)
         self.stats_tubes_total = 0
         self.tubes_sortis = 0  # Tubes ayant atteint la sortie
-        self.transit_times_raw = []  # Durées de transit individuelles (arrivee → sortie)
-        self.transit_times_urgents = []  # Idem pour les tubes urgents uniquement
+        self.transit_times_raw = deque(maxlen=10_000)  # Durées de transit individuelles
+        self._transit_sum = 0.0       # somme courante pour avg O(1)
+        self.transit_times_urgents = deque(maxlen=10_000)  # Idem pour les tubes urgents uniquement
         self.headless = False  # True = simulation accélérée sans animation (mode goulots)
         self.turbo = False  # True = 10 pas SimPy par tick (×10 vitesse)
         self._sol_cache = None  # Cache du sol grid, initialisé au lancement de la simulation
@@ -119,12 +124,24 @@ class TabLive:
         self.tubes_degrades = 0         # compteur cumulatif dégradés (délai ou panne machine)
         self.tubes_perimes = 0          # compteur cumulatif périmés (échantillon à refaire)
         # ── Navettes multi-source ─────────────────────────────────────────────
-        self.navette_queues: dict = {}  # {fournisseur_id: [tubes en attente navette]}
-        self.navette_stats:  dict = {}  # {fournisseur_id: {en_transit, total_envoye, en_queue}}
+        self.navette_queues:      dict = {}  # {fournisseur_id: [tubes en attente navette]}
+        self.navette_stats:       dict = {}  # {fournisseur_id: {en_transit, total_envoye, en_queue}}
+        self.navette_en_transit:  dict = {}  # {fournisseur_id: [tubes en cours de trajet]} — données prospectives
+        self.anticipation_active: bool = True  # si False, désactive _reequilibrer_pour_rush (utile pour tests)
+        # Cache lecture disque pour _analyse_prospective (reset à chaque démarrage de sim)
+        self._cache_navette_conf:  dict | None = None
+        self._cache_fournisseurs:  dict | None = None
         # ── Réservation de slots machine ──────────────────────────────────────
         # Slots réservés par un tech en transit mais pas encore déposés.
         # Empêche un second tech de prendre la même place de file.
         self.machine_slots_reserved: dict = {}  # {nom_machine: nb_slots_réservés}
+        # Garde contre les doublons de traiter_batch_machine.
+        # Une machine ne doit jamais avoir deux processus de batch actifs simultanément.
+        # Le watchdog et l'auto-restart vérifient ce set avant de spawner.
+        self._machines_batch_actif: set = set()
+        # Attributs de diagnostic (actifs uniquement en mode DEBUG)
+        self._debug_mode: bool = False
+        self._debug_entries: deque = deque(maxlen=5000)
         # Interface canvas
         self.canvas = tk.Canvas(self.parent, bg="#ffffff", highlightthickness=0)
         
@@ -143,6 +160,11 @@ class TabLive:
         
         self.btn_start = ttk.Button(self.info_frame, text="▶ LANCER SIMULATION", command=self.toggle_sim)
         self.btn_start.pack(side=tk.LEFT, padx=5)
+
+        self.btn_reset = ttk.Button(self.info_frame, text="⏹ FORCER ARRÊT",
+                                    command=self.forcer_arret, width=15)
+        self.btn_reset.pack(side=tk.LEFT, padx=5)
+        self.btn_reset.config(state="disabled")
 
         self.btn_turbo = ttk.Button(self.info_frame, text="⚡ ×10", command=self.toggle_turbo, width=7)
         self.btn_turbo.pack(side=tk.LEFT, padx=5)
@@ -173,6 +195,9 @@ class TabLive:
         self.lbl_erreurs = ttk.Label(self.info_frame, text="⚠ Rejets: 0 | Dégradés: 0",
                                      font=theme.FONT_BODY, foreground="#e67e22")
         self.lbl_erreurs.pack(side=tk.RIGHT, padx=15)
+
+        # Afficher le plan du labo dès l'ouverture (avant de lancer la simulation)
+        self.parent.after(50, self.dessiner_labo_complet)
 
     def mettre_a_jour_compteur(self):
         """Met à jour l'affichage du nombre de tubes et de l'heure simulée"""
@@ -355,6 +380,9 @@ class TabLive:
         - seed        : graine random optionnelle (reproductibilité / tests)
         """
         import threading
+        # Capturer ia_active MAINTENANT, avant que le thread ne démarre.
+        # Cela évite que reset() ou un changement tardif ne l'écrase.
+        _ia_pour_cette_sim = self.coordinateur.ia_active
 
         def _run():
             try:
@@ -373,23 +401,32 @@ class TabLive:
                 self.machine_labels = {}
                 self.machine_labels_queue = {}
                 self.machine_labels_output = {}
-                self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
-                                      "transit_time_avg": [], "transit_time_rolling": [],
-                                      "transit_time_pending_max": [],
-                                      "rejetes": [], "degrades": [], "pannes": {},
+                _MX = 43_200
+                self.stats_history = {"time": deque(maxlen=_MX), "queues": {}, "output": {}, "busy": {}, "entry": deque(maxlen=_MX),
+                                      "transit_time_avg": deque(maxlen=_MX), "transit_time_rolling": deque(maxlen=_MX),
+                                      "transit_time_pending_max": deque(maxlen=_MX),
+                                      "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX), "pannes": {},
                                       "distances_tech": {}, "bienetre": {},
                                       "arrivees_par_heure": {},
+                                      "arrivees_par_heure_par_service": {},
                                       "events_arret_maladie": [],
-                                      "stress_events": []}
+                                      "stress_events": deque(maxlen=10_000),
+                                      "anticipations": deque(maxlen=2_000)}
                 self.aggregator = StatsAggregator()
                 self.coordinateur.reset()
+                # Réappliquer ia_active capturé AVANT le thread — reset() ne le touche pas
+                # mais d'autres appels (toggle_sim, _toggle_ia) auraient pu le modifier.
+                self.coordinateur.ia_active = _ia_pour_cette_sim
                 if not self.headless and hasattr(self, 'lbl_stress'):
                     self.lbl_stress.config(text="⚪ Stress: —", foreground="#7f8c8d")
                 self._jours_connus_dist = set()
+                self._cache_navette_conf = None  # reset cache lecture disque
+                self._cache_fournisseurs = None
                 self.stats_tubes_total = 0
                 self.tubes_sortis = 0
-                self.transit_times_raw = []
-                self.transit_times_urgents = []
+                self.transit_times_raw = deque(maxlen=10_000)
+                self._transit_sum = 0.0
+                self.transit_times_urgents = deque(maxlen=10_000)
                 self.prochaine_arrivee = 0
                 self.panne_machines = set()
                 self.paillasse_analyste = set()
@@ -430,9 +467,11 @@ class TabLive:
                 # Créer l'environnement SimPy et lancer les processus
                 self.env = simpy.Environment()
                 self._sol_cache = self.config_manager.data.get("sol", {})  # cache sol
-                self.navette_queues = {}
-                self.navette_stats  = {}
+                self.navette_queues     = {}
+                self.navette_stats      = {}
+                self.navette_en_transit = {}
                 self.machine_slots_reserved = {}
+                self._machines_batch_actif = set()
                 fournisseurs_cfg = self.config_manager.get_fournisseurs()
                 fournisseurs_actifs = {
                     fid: f for fid, f in fournisseurs_cfg.items()
@@ -458,10 +497,28 @@ class TabLive:
                 # Avancer par tranche de 5 % pour le retour de progression
                 tranche = max(duree_sim / 20, 1)
                 t = 0
+                import time as _time
+                _t_reel_debut = _time.monotonic()
+                _derniere_tranche_lente = False
                 while t < duree_sim and self.running:
                     t_next = min(t + tranche, duree_sim)
+                    _t0 = _time.monotonic()
                     self.env.run(until=t_next)
+                    _duree_reel = _time.monotonic() - _t0
                     t = t_next
+                    # Diagnostic : signaler si une tranche prend > 10 s réelles
+                    if _duree_reel > 10.0:
+                        jours_sim = t / 1440.0
+                        entry_sz  = len(self.entry_queue)
+                        mq_total  = sum(len(q) for q in self.machine_queues.values())
+                        oq_total  = sum(len(q) for q in self.output_queues.values())
+                        nb_batch  = len(self._machines_batch_actif)
+                        print(f"[PERF] t={t:.0f} ({jours_sim:.1f}j) tranche={_duree_reel:.1f}s "
+                              f"| entry={entry_sz} mq={mq_total} oq={oq_total} "
+                              f"batch_actifs={nb_batch}")
+                        _derniere_tranche_lente = True
+                    elif _derniere_tranche_lente:
+                        _derniere_tranche_lente = False
                     if on_progress:
                         on_progress(t, duree_sim)
 
@@ -474,7 +531,332 @@ class TabLive:
                 if on_complete:
                     on_complete()
 
+                self.headless = False
+                if on_complete:
+                    on_complete()
+
         threading.Thread(target=_run, daemon=True).start()
+
+    def lancer_debug(self, on_fin=None):
+        """Lance une simulation headless instrumentée (tranches de 10 min) pour
+        détecter les blocages stochastiques. Écrit debug_sim.log et affiche un
+        panneau en temps réel.
+
+        Deux mécanismes de détection :
+          1. Tranche > SEUIL_CRITIQUE secondes réelles → blocage sur cette tranche.
+          2. Thread moniteur : env.now immobile 6 s → freeze confirmé.
+
+        on_fin : callback optionnel appelé depuis le thread quand la session se termine.
+        """
+        import threading
+        import time as _time
+        import json
+
+        if self.running:
+            from tkinter import messagebox
+            messagebox.showwarning("Simulation en cours",
+                                   "Arrêter d'abord la simulation en cours.")
+            return
+
+        # ── Fenêtre de suivi ────────────────────────────────────────────────
+        win = tk.Toplevel(self.parent)
+        win.title("Simulation DEBUG")
+        win.geometry("700x440")
+        win.resizable(True, True)
+
+        frm_top = ttk.Frame(win)
+        frm_top.pack(fill=tk.X, padx=8, pady=4)
+        lbl_status = ttk.Label(frm_top, text="Initialisation...", font=theme.FONT_BODY)
+        lbl_status.pack(side=tk.LEFT)
+        btn_stop = ttk.Button(frm_top, text="Arrêter",
+                              command=lambda: setattr(self, 'running', False))
+        btn_stop.pack(side=tk.RIGHT)
+
+        txt = tk.Text(win, height=22, width=90, font=("Consolas", 8),
+                      state=tk.DISABLED, wrap=tk.NONE)
+        sb_y = ttk.Scrollbar(win, command=txt.yview)
+        txt.configure(yscrollcommand=sb_y.set)
+        sb_y.pack(side=tk.RIGHT, fill=tk.Y)
+        txt.pack(fill=tk.BOTH, expand=True, padx=5, pady=2)
+
+        lbl_log = ttk.Label(win, text="", font=("Consolas", 8), foreground="#7f8c8d")
+        lbl_log.pack(anchor=tk.W, padx=8, pady=2)
+
+        LOG_PATH = "debug_sim.log"
+        log_lines: list = []
+
+        def ui_log(msg: str):
+            log_lines.append(msg)
+            def _append():
+                txt.configure(state=tk.NORMAL)
+                txt.insert(tk.END, msg + "\n")
+                txt.see(tk.END)
+                txt.configure(state=tk.DISABLED)
+            self.parent.after(0, _append)
+
+        def dump_state(prefix: str = ""):
+            t = self.env.now if self.env else -1.0
+            mq = {k: len(v) for k, v in self.machine_queues.items() if v}
+            oq = {k: len(v) for k, v in self.output_queues.items() if v}
+            if self.env and self.env._queue:
+                eq_size = len(self.env._queue)
+                eq_at_now = sum(1 for e in self.env._queue if abs(e[0] - t) < 1e-9)
+                eq_times = sorted(set(round(e[0], 1) for e in self.env._queue[:200]))[:8]
+            else:
+                eq_size = eq_at_now = 0
+                eq_times = []
+            lines = [
+                f"{prefix}t_sim={t:.1f} ({t/1440:.3f}j)",
+                f"  batch_actifs({len(self._machines_batch_actif)}): {sorted(self._machines_batch_actif)}",
+                f"  blinking({len(self.blinking_machines)}): {sorted(self.blinking_machines)}",
+                f"  machine_queues={mq}",
+                f"  output_queues={oq}",
+                f"  entry_queue={len(self.entry_queue)}",
+                f"  SimPy_events={eq_size} | a_t_now={eq_at_now} | prochains_t={eq_times}",
+            ]
+            for line in lines:
+                ui_log(line)
+
+        # ── Thread moniteur (détecte le freeze depuis l'extérieur) ──────────
+        _freeze_signale = [False]
+
+        def _moniteur():
+            prev_t = -1.0
+            stale = 0
+            while self.running:
+                _time.sleep(3.0)
+                if not self.running:
+                    break
+                if self.env is None:
+                    continue
+                cur = self.env.now
+                if abs(cur - prev_t) < 0.001:
+                    stale += 1
+                    if stale >= 2 and not _freeze_signale[0]:
+                        # Distinguer vrai blocage (aucun event SimPy) de simple lenteur
+                        n_events = len(self.env._queue) if (self.env and self.env._queue) else 0
+                        if n_events == 0:
+                            # Vrai gel : SimPy n'a plus d'événements à traiter
+                            _freeze_signale[0] = True
+                            ui_log(f"\n>>> FREEZE DETECTE : env.now={cur:.1f} immobile depuis ~{stale*3}s (0 events) <<<")
+                            dump_state("FREEZE ")
+                            self.running = False
+                        else:
+                            # Simulation lente mais pas bloquée : logguer sans arrêter
+                            ui_log(f"\n>>> RALENTISSEMENT : env.now={cur:.1f} immobile ~{stale*3}s ({n_events} events en attente) <<<")
+                            dump_state("LENT  ")
+                else:
+                    stale = 0
+                prev_t = cur
+
+        # ── Thread simulation ───────────────────────────────────────────────
+        def _run_debug():
+            try:
+                self._debug_mode = True
+                self._debug_entries.clear()
+                self.headless = True
+                self.running = True
+                self.parent.after(0, lambda: self.btn_reset.config(state="normal"))
+
+                # -- Init identique à lancer_simulation_headless --
+                self.entry_queue = []
+                self.machine_queues = {}
+                self.output_queues = {}
+                self.technicians = []
+                self.blinking_machines = set()
+                self.machine_indicators = {}
+                self.machine_labels = {}
+                self.machine_labels_queue = {}
+                self.machine_labels_output = {}
+                _MX = 43_200
+                self.stats_history = {
+                    "time": deque(maxlen=_MX), "queues": {}, "output": {}, "busy": {},
+                    "entry": deque(maxlen=_MX),
+                    "transit_time_avg": deque(maxlen=_MX),
+                    "transit_time_rolling": deque(maxlen=_MX),
+                    "transit_time_pending_max": deque(maxlen=_MX),
+                    "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX),
+                    "pannes": {}, "distances_tech": {}, "bienetre": {},
+                    "arrivees_par_heure": {}, "arrivees_par_heure_par_service": {},
+                    "events_arret_maladie": [],
+                    "stress_events": deque(maxlen=10_000),
+                    "anticipations": deque(maxlen=2_000),
+                }
+                self.aggregator = StatsAggregator()
+                self.coordinateur.reset()
+                self.coordinateur.ia_active = False  # pas d'IA en debug
+                self._jours_connus_dist = set()
+                self._cache_navette_conf = None
+                self._cache_fournisseurs = None
+                self.stats_tubes_total = 0
+                self.tubes_sortis = 0
+                self.transit_times_raw = deque(maxlen=10_000)
+                self._transit_sum = 0.0
+                self.transit_times_urgents = deque(maxlen=10_000)
+                self.prochaine_arrivee = 0
+                self.panne_machines = set()
+                self.paillasse_analyste = set()
+                self.machine_repair_events = {}
+                self.tubes_rejetes = 0
+                self.tubes_degrades = 0
+                self.tubes_perimes = 0
+
+                config_types = self.config_manager.data.get("types_tubes", {})
+                if config_types:
+                    self.types_tubes = config_types
+
+                machines = self.config_manager.get_machines()
+                entrees_cfg = [m for m in machines.values() if m["type"] == "ENTREE"]
+                self.heure_debut_sim = entrees_cfg[0].get("heure_debut", 7.0) if entrees_cfg else 7.0
+                tech_offices = [(k, m) for k, m in machines.items() if m["type"] == "TECH_OFFICE"]
+                if not tech_offices:
+                    tech_offices = [("tech_0", {"coords": {"x": 125, "y": 125}})]
+                for idx, (office_key, office) in enumerate(tech_offices):
+                    tech = TechnicianState(
+                        office["coords"]["x"], office["coords"]["y"],
+                        canvas_id=None, index=idx)
+                    tech.pct_erreur_base = office.get("pct_erreur_tech", 0.0)
+                    tech.pct_erreur     = tech.pct_erreur_base
+                    tech.nom            = office.get("nom") or office_key
+                    tech.experience     = int(office.get("experience", 3))
+                    tech.age            = int(office.get("age", 35))
+                    tech.seuil_charge_fatigue   = float(office.get("seuil_charge_fatigue", 0.70))
+                    tech.taux_montee_fatigue    = float(office.get("taux_montee_fatigue", 0.01))
+                    tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
+                    tech.capacite_max_tubes     = int(office.get("capacite_max_tubes", 10))
+                    tech.office_x = office["coords"]["x"]
+                    tech.office_y = office["coords"]["y"]
+                    self.technicians.append(tech)
+
+                self.env = simpy.Environment()
+                self._sol_cache = self.config_manager.data.get("sol", {})
+                self.navette_queues     = {}
+                self.navette_stats      = {}
+                self.navette_en_transit = {}
+                self.machine_slots_reserved = {}
+                self._machines_batch_actif = set()
+
+                fournisseurs_cfg = self.config_manager.get_fournisseurs()
+                fournisseurs_actifs = {
+                    fid: f for fid, f in fournisseurs_cfg.items()
+                    if f.get("actif", True)
+                }
+                if fournisseurs_actifs:
+                    navette_conf = self.config_manager.get_navette_principale()
+                    for fid, fconf in fournisseurs_actifs.items():
+                        self.navette_queues[fid] = []
+                        self.navette_stats[fid] = {"en_transit": 0, "total_envoye": 0, "en_queue": 0}
+                        self.env.process(self.tube_generation_fournisseur(fid, fconf))
+                        self.env.process(self.navette_process(fid, fconf, navette_conf))
+                else:
+                    self.env.process(self.tube_generation())
+                for tech in self.technicians:
+                    self.env.process(self.technician_process(tech))
+                self.env.process(self.stats_collector())
+                self.env.process(self.coordinateur_process())
+                for nom_m, m_conf in machines.items():
+                    if m_conf.get("tmep") and m_conf.get("tmr"):
+                        self.env.process(self.machine_breakdown_process(nom_m, m_conf))
+
+                # Démarrer le thread moniteur
+                threading.Thread(target=_moniteur, daemon=True).start()
+
+                duree_sim = float(self.config_manager.data.get("duree_simulation", 10080))
+                # Tranches fines : 10 min sim → détection précise au ~1/1000 de journée
+                TRANCHE = 10.0
+                SEUIL_LENT = 0.5      # secondes réelles pour 10 min sim = anormal
+                SEUIL_CRITIQUE = 20.0  # = figé sur cette tranche
+
+                t_sim = 0.0
+                nb_lentes = 0
+
+                ui_log(f"=== DEBUG SIM — durée={duree_sim:.0f} min ({duree_sim/1440:.1f}j) ===")
+                ui_log(f"Tranche={TRANCHE:.0f} min sim | Seuil lent={SEUIL_LENT}s | Critique={SEUIL_CRITIQUE}s\n")
+
+                while t_sim < duree_sim and self.running:
+                    t_next = min(t_sim + TRANCHE, duree_sim)
+                    t0 = _time.monotonic()
+                    self.env.run(until=t_next)
+                    elapsed = _time.monotonic() - t0
+                    t_sim = t_next
+
+                    pct = t_sim / duree_sim * 100
+                    self.parent.after(0, lambda p=pct, ts=t_sim, ms=elapsed * 1000:
+                        lbl_status.config(
+                            text=f"t={ts:.0f} ({ts/1440:.2f}j) — {p:.0f}% | {ms:.0f} ms/tranche"
+                        ))
+
+                    if elapsed > SEUIL_LENT:
+                        nb_lentes += 1
+                        ui_log(f"\n--- Tranche LENTE #{nb_lentes} "
+                               f"t=[{t_sim-TRANCHE:.0f},{t_sim:.0f}] : {elapsed:.3f}s ---")
+                        dump_state()
+                        # Dump des 20 dernières entrées debug
+                        recentes = list(self._debug_entries)[-20:]
+                        if recentes:
+                            ui_log("  Derniers events batch:")
+                            for e in recentes:
+                                ui_log(f"    {e}")
+
+                    if elapsed > SEUIL_CRITIQUE:
+                        ui_log(f"\n>>> TRANCHE CRITIQUE ({elapsed:.1f}s) — blocage confirmé <<<")
+                        self.running = False
+                        break
+
+            except Exception as exc:
+                import traceback
+                ui_log(f"\nEXCEPTION: {exc}\n{traceback.format_exc()}")
+            finally:
+                self._debug_mode = False
+                self.running = False
+                self.headless = False
+
+                # Sérialiser les entrées debug en JSON
+                try:
+                    with open(LOG_PATH, "w", encoding="utf-8") as fh:
+                        json.dump({
+                            "log": log_lines,
+                            "debug_entries": list(self._debug_entries),
+                        }, fh, ensure_ascii=False, indent=2)
+                    self.parent.after(0, lambda: lbl_log.config(
+                        text=f"Log écrit : {LOG_PATH}"))
+                except Exception as exc_w:
+                    self.parent.after(0, lambda: lbl_log.config(
+                        text=f"Erreur écriture log : {exc_w}"))
+
+                self.parent.after(0, lambda: lbl_status.config(text="Terminé."))
+                self.parent.after(0, lambda: btn_stop.config(
+                    text="Fermer", command=win.destroy))
+                self.parent.after(0, lambda: self.btn_reset.config(state="disabled"))
+                if on_fin:
+                    on_fin()
+
+        threading.Thread(target=_run_debug, daemon=True).start()
+
+    def forcer_arret(self):
+        """Réinitialise l'état de la simulation sans fermer l'application.
+
+        Stratégie thread-safe : on pose uniquement les flags d'arrêt (running,
+        headless, _debug_mode). Le thread daemon SimPy verra running=False à son
+        prochain yield et s'arrêtera proprement sans accéder aux dicts partagés.
+        Les structures de données (queues, stats, env…) sont réinitialisées au
+        prochain lancement de simulation dans toggle_sim / lancer_simulation_headless
+        — pas ici, pour éviter les KeyError/AttributeError sur l'env encore actif.
+        """
+        self.running = False
+        self.headless = False
+        self._debug_mode = False
+        # Réinitialiser uniquement les compteurs UI (pas les dicts partagés
+        # avec le thread encore en cours d'arrêt).
+        self.turbo = False
+        self.btn_turbo.config(text="⚡ ×10")
+        self.btn_start.config(text="▶ LANCER SIMULATION")
+        self.btn_reset.config(state="disabled")
+        self.lbl_queue.config(text="Tubes en attente : 0")
+        self.lbl_erreurs.config(text="⚠ Rejets: 0 | Dégradés: 0")
+        if hasattr(self, 'lbl_stress'):
+            self.lbl_stress.config(text="⚪ Stress: —", foreground="#7f8c8d")
+        print("[INFO] Simulation forcée à l'arrêt — état réinitialisé.")
 
     def toggle_sim(self):
         """Démarre ou arrête la simulation"""
@@ -482,6 +864,7 @@ class TabLive:
             # DÉMARRAGE
             self.running = True
             self.btn_start.config(text="⏹ ARRÊTER SIMULATION")
+            self.btn_reset.config(state="normal")
             
             # Initialiser les queues AVANT de dessiner
             self.entry_queue = []
@@ -552,24 +935,32 @@ class TabLive:
             self.prochaine_arrivee = 0
 
             # Réinitialiser les statistiques
-            self.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
+            _MX = 43_200
+            self.stats_history = {"time": deque(maxlen=_MX), "queues": {}, "output": {}, "busy": {}, "entry": deque(maxlen=_MX),
                                   "bienetre": {},
-                                  "transit_time_avg": [], "transit_time_rolling": [],
-                                  "transit_time_pending_max": [],
-                                  "rejetes": [], "degrades": [], "pannes": {},
+                                  "transit_time_avg": deque(maxlen=_MX), "transit_time_rolling": deque(maxlen=_MX),
+                                  "transit_time_pending_max": deque(maxlen=_MX),
+                                  "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX), "pannes": {},
                                   "distances_tech": {},
                                   "arrivees_par_heure": {},
+                                  "arrivees_par_heure_par_service": {},
                                   "events_arret_maladie": [],
-                                  "stress_events": []}
+                                  "stress_events": deque(maxlen=10_000),
+                                  "anticipations": deque(maxlen=2_000)}
             self.aggregator = StatsAggregator()
             self.coordinateur.reset()
+            # Synchroniser ia_active avec le toggle UI de l'onglet Live
+            self.coordinateur.ia_active = self._var_ia.get()
             if not self.headless and hasattr(self, 'lbl_stress'):
                 self.lbl_stress.config(text="⚪ Stress: —", foreground="#7f8c8d")
             self._jours_connus_dist = set()
+            self._cache_navette_conf = None  # reset cache lecture disque
+            self._cache_fournisseurs = None
             self.stats_tubes_total = 0
             self.tubes_sortis = 0
-            self.transit_times_raw = []
-            self.transit_times_urgents = []
+            self.transit_times_raw = deque(maxlen=10_000)
+            self._transit_sum = 0.0
+            self.transit_times_urgents = deque(maxlen=10_000)
             self.panne_machines = set()
             self.paillasse_analyste = set()
             self.machine_repair_events = {}
@@ -578,9 +969,11 @@ class TabLive:
             self.tubes_perimes = 0
 
             # Réinitialiser les navettes multi-source
-            self.navette_queues = {}
-            self.navette_stats  = {}
+            self.navette_queues     = {}
+            self.navette_stats      = {}
+            self.navette_en_transit = {}
             self.machine_slots_reserved = {}
+            self._machines_batch_actif = set()
 
             self.mettre_a_jour_compteur()
 
@@ -616,6 +1009,7 @@ class TabLive:
             self.turbo = False
             self.btn_turbo.config(text="⚡ ×10")
             self.btn_start.config(text="▶ LANCER SIMULATION")
+            self.btn_reset.config(state="disabled")
             for t in self.technicians:
                 if t.canvas_id:
                     try:
@@ -667,6 +1061,7 @@ class TabLive:
                 self.turbo = False
                 self.btn_turbo.config(text="⚡ ×10")
                 self.btn_start.config(text="▶ LANCER SIMULATION")
+                self.btn_reset.config(state="disabled")
             except Exception as e:
                 if self.running:
                     print(f"[ERREUR LOOP] {e}")
@@ -718,7 +1113,12 @@ class TabLive:
             self.canvas.itemconfig(ind_id, fill="", outline="")
 
     def trouver_chemin_astar(self, start_x, start_y, goal_x, goal_y):
-        """Calcule un chemin A* en pixels en évitant COUNTER et WALL."""
+        """Calcule un chemin A* en pixels en évitant COUNTER et WALL.
+
+        Utilise un dict came_from pour le backtracking : O(M log M) au lieu de
+        O(M²) — la version précédente stockait path+[nœud] dans chaque entrée
+        du heap, créant une copie de liste à chaque expansion.
+        """
         CELL = 50
         if self._sol_cache is None:
             self._sol_cache = self.config_manager.data.get("sol", {})
@@ -753,31 +1153,43 @@ class TabLive:
             dx, dy = abs(c - gc), abs(r - gr)
             return max(dx, dy) + (SQRT2 - 1) * min(dx, dy)
 
-        # (f, g, col, row, chemin)
-        open_set = [(h(sc, sr), 0, sc, sr, [(sc, sr)])]
-        visited = set()
+        # Heap : (f, g, col, row) — chemin reconstruit via came_from
+        open_set = [(h(sc, sr), 0.0, sc, sr)]
+        came_from = {(sc, sr): None}   # nœud → parent
+        g_score   = {(sc, sr): 0.0}
+        closed    = set()
 
         while open_set:
-            f, g, col, row, path = heapq.heappop(open_set)
-            if (col, row) in visited:
+            f, g, col, row = heapq.heappop(open_set)
+            if (col, row) in closed:
                 continue
-            visited.add((col, row))
+            closed.add((col, row))
 
             if col == gc and row == gr:
-                # Convertir en coordonnées pixels (centre de chaque cellule), sans inclure le départ
+                # Backtracking O(chemin) — aucune copie pendant la recherche
+                path = []
+                cur = (col, row)
+                while cur is not None:
+                    path.append(cur)
+                    cur = came_from[cur]
+                path.reverse()
+                # Convertir en pixels (centre de cellule), sans le nœud de départ
                 return [(c * CELL + CELL // 2, r * CELL + CELL // 2) for c, r in path[1:]]
 
             for dc, dr in [(0, 1), (0, -1), (1, 0), (-1, 0),
                            (1, 1), (1, -1), (-1, 1), (-1, -1)]:
                 nc, nr = col + dc, row + dr
-                if (nc, nr) in visited or not walkable(nc, nr):
+                if (nc, nr) in closed or not walkable(nc, nr):
                     continue
                 # Empêcher le coupage de coins : les deux cases adjacentes doivent être libres
                 if dc != 0 and dr != 0:
                     if not walkable(col + dc, row) or not walkable(col, row + dr):
                         continue
                 ng = g + (SQRT2 if dc != 0 and dr != 0 else 1)
-                heapq.heappush(open_set, (ng + h(nc, nr), ng, nc, nr, path + [(nc, nr)]))
+                if ng < g_score.get((nc, nr), float('inf')):
+                    g_score[(nc, nr)] = ng
+                    came_from[(nc, nr)] = (col, row)
+                    heapq.heappush(open_set, (ng + h(nc, nr), ng, nc, nr))
 
         # Aucun chemin trouvé — aller directement
         return [(goal_x, goal_y)]
@@ -930,47 +1342,49 @@ class TabLive:
     def stats_collector(self):
         """Échantillonne l'état des files toutes les 2 unités de simulation pour les graphiques goulots."""
         interval = 2.0
+        # deque(maxlen=N) : append en O(1), cap automatique — pas de pop(0) manuel.
+        # 43 200 pts = 2 min × 43 200 = 86 400 min sim ≈ 60 jours.
+        MAX_SERIES = 43_200
+
         while self.running:
             t = self.env.now
-            self.stats_history["time"].append(t)
+            sh = self.stats_history
 
-            # File d'entrée
-            self.stats_history["entry"].append(len(self.entry_queue))
+            # ── Séries temporelles (deque à maxlen → auto-cap O(1)) ──────────
+            sh["time"].append(t)
+            sh["entry"].append(len(self.entry_queue))
 
             machines = self.config_manager.get_machines()
             for nom, m in machines.items():
                 if m["type"] in ("ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"):
                     continue
-                if nom not in self.stats_history["queues"]:
-                    self.stats_history["queues"][nom] = []
-                self.stats_history["queues"][nom].append(len(self.machine_queues.get(nom, [])))
+                if nom not in sh["queues"]:
+                    sh["queues"][nom] = deque(maxlen=MAX_SERIES)
+                sh["queues"][nom].append(len(self.machine_queues.get(nom, [])))
 
-                # File de sortie
-                if nom not in self.stats_history["output"]:
-                    self.stats_history["output"][nom] = []
-                self.stats_history["output"][nom].append(len(self.output_queues.get(nom, [])))
+                if nom not in sh["output"]:
+                    sh["output"][nom] = deque(maxlen=MAX_SERIES)
+                sh["output"][nom].append(len(self.output_queues.get(nom, [])))
 
-                # Occupation (1 = en traitement, 0 = libre)
-                if nom not in self.stats_history["busy"]:
-                    self.stats_history["busy"][nom] = []
-                self.stats_history["busy"][nom].append(1 if nom in self.blinking_machines else 0)
+                if nom not in sh["busy"]:
+                    sh["busy"][nom] = deque(maxlen=MAX_SERIES)
+                sh["busy"][nom].append(1 if nom in self.blinking_machines else 0)
 
-            # Temps de transit : moyenne cumulative + moyenne glissante (20 derniers tubes)
+            # Temps de transit : moyenne + glissante (20 derniers tubes)
+            # _transit_sum est maintenu de manière incrémentale (avec gestion de l'éviction
+            # dans technician_process). Pas de sum() O(n) ici.
             if self.transit_times_raw:
-                avg_transit = sum(self.transit_times_raw) / len(self.transit_times_raw)
-                window = self.transit_times_raw[-20:]
+                n = len(self.transit_times_raw)
+                avg_transit = self._transit_sum / n
+                window = list(self.transit_times_raw)[-20:]
                 rolling_transit = sum(window) / len(window)
             else:
-                avg_transit = None    # None = pas encore de données (pas de 0 trompeur)
+                avg_transit = None
                 rolling_transit = None
-            self.stats_history["transit_time_avg"].append(avg_transit)
-            self.stats_history["transit_time_rolling"].append(rolling_transit)
-            # Snapshot des durées brutes pour min/max/p95 (liste complète, mise à jour)
-            self.stats_history["transit_times_raw"] = list(self.transit_times_raw)
+            sh["transit_time_avg"].append(avg_transit)
+            sh["transit_time_rolling"].append(rolling_transit)
 
             # Âge du plus vieux tube encore en attente dans le système
-            # (entrée + files machine + sorties de machine non encore récupérées)
-            # → monte pendant un blocage même si aucun tube ne sort
             all_pending = list(self.entry_queue)
             for _q in self.machine_queues.values():
                 all_pending.extend(_q)
@@ -978,11 +1392,11 @@ class TabLive:
                 all_pending.extend(_q)
             ages_en_attente = [t - tube["arrivee"] for tube in all_pending if "arrivee" in tube]
             pending_max = max(ages_en_attente) if ages_en_attente else None
-            self.stats_history["transit_time_pending_max"].append(pending_max)
+            sh["transit_time_pending_max"].append(pending_max)
 
             # Compteurs d'erreurs (valeurs cumulatives, parallèles à "time")
-            self.stats_history["rejetes"].append(self.tubes_rejetes)
-            self.stats_history["degrades"].append(self.tubes_degrades)
+            sh["rejetes"].append(self.tubes_rejetes)
+            sh["degrades"].append(self.tubes_degrades)
 
             # Distance journalière par technicien (1 jour SimPy = 1440 min)
             # 1 case = 50 px ; metres_par_case (config) définit l'échelle réelle.
@@ -1104,17 +1518,19 @@ class TabLive:
             # ── Watchdog : forcer un batch si un tube est bloqué trop longtemps ──
             # Cas typique : arrivées lentes → capacite jamais atteinte → machine jamais déclenchée.
             # Paramètre JSON par machine : "timeout_batch" (minutes, défaut 60).
+            # GARDE : _machines_batch_actif empêche tout doublon de processus.
             for nom_wm, conf_wm in machines.items():
                 if conf_wm.get("type") in ("ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"):
                     continue
                 q_wm = self.machine_queues.get(nom_wm, [])
-                if q_wm and nom_wm not in self.blinking_machines:
+                if q_wm and nom_wm not in self._machines_batch_actif:
                     oldest_age = t - q_wm[0].get("arrivee", t)
                     timeout_batch = conf_wm.get("timeout_batch", 60)
                     if oldest_age > timeout_batch:
                         # Les machines à opérateur requis ne démarrent que si un tech est au poste
                         tech_present = not conf_wm.get("tech_requis_poste", False) or nom_wm in self.paillasse_analyste
                         if tech_present:
+                            self._machines_batch_actif.add(nom_wm)
                             self.env.process(self.traiter_batch_machine(nom_wm, conf_wm))
 
             # ── Alimenter l'aggregator multi-niveaux ────────────────────────
@@ -1137,6 +1553,113 @@ class TabLive:
             })
 
             yield self.env.timeout(interval)
+
+    # ── Données prospectives ──────────────────────────────────────────────────
+
+    def _analyse_prospective(self, horizon_min: float = 20.0) -> dict:
+        """Analyse les tubes en attente de ramassage et en transit pour anticiper les arrivées.
+
+        Retourne un dict :
+          nb_total          : nombre de tubes qui arriveront dans `horizon_min` minutes
+          nb_urgents        : dont urgents
+          par_service       : {fid: nb_tubes}
+          charge_workflows  : {etape_workflow: nb_tubes attendus} → pré-charge estimée
+          rush_detecte      : True si seuil dépassé
+          urgence_critique  : True si nb_urgents >= seuil_urgents
+        """
+        now      = self.env.now
+        nb_total = 0
+        nb_urgents = 0
+        par_service: dict    = {}
+        charge_workflows: dict = {}
+
+        navette_conf = self._cache_navette_conf
+        if navette_conf is None:
+            navette_conf = self.config_manager.get_navette_principale()
+            self._cache_navette_conf = navette_conf
+        freq_ramassage = float(navette_conf.get("frequence_jour_min", 30))
+
+        # 1. Tubes en transit (ETA exacte — données prospectives fiables)
+        for fid, tubes in self.navette_en_transit.items():
+            for tube in tubes:
+                eta = tube.get("eta_labo", now)
+                if eta - now <= horizon_min:
+                    nb_total += 1
+                    if tube.get("urgent"):
+                        nb_urgents += 1
+                    par_service[fid] = par_service.get(fid, 0) + 1
+                    for etape in tube.get("workflow", []):
+                        charge_workflows[etape] = charge_workflows.get(etape, 0) + 1
+
+        # 2. Tubes en queue navette (pas encore ramassés)
+        #    ETA optimiste = trajet seul ; si ≤ horizon, ils arriveront probablement à temps
+        fournisseurs = self._cache_fournisseurs
+        if fournisseurs is None:
+            fournisseurs = self.config_manager.get_fournisseurs()
+            self._cache_fournisseurs = fournisseurs
+        for fid, queue in self.navette_queues.items():
+            if not queue:
+                continue
+            fconf  = fournisseurs.get(fid, {})
+            trajet = float(fconf.get("duree_trajet_min", 10.0))
+            # Pire cas : on vient juste de rater un passage → attente jusqu'au prochain
+            eta_pire_cas = trajet + freq_ramassage
+            if eta_pire_cas <= horizon_min:
+                # Tous arriveront dans l'horizon même au pire
+                tubes_dans_horizon = queue
+            elif trajet <= horizon_min:
+                # Seulement ceux ramassés au prochain passage (capacite_max)
+                cap = int(navette_conf.get("capacite_max", 20))
+                tubes_dans_horizon = queue[:cap]
+            else:
+                tubes_dans_horizon = []
+
+            for tube in tubes_dans_horizon:
+                nb_total += 1
+                if tube.get("urgent"):
+                    nb_urgents += 1
+                par_service[fid] = par_service.get(fid, 0) + 1
+                for etape in tube.get("workflow", []):
+                    charge_workflows[etape] = charge_workflows.get(etape, 0) + 1
+
+        seuil_rush    = 8   # tubes dans l'horizon pour déclarer un rush
+        seuil_urgents = 3   # urgents dans l'horizon pour déclarer urgence critique
+
+        return {
+            "nb_total":         nb_total,
+            "nb_urgents":       nb_urgents,
+            "par_service":      par_service,
+            "charge_workflows": charge_workflows,
+            "rush_detecte":     nb_total >= seuil_rush,
+            "urgence_critique": nb_urgents >= seuil_urgents,
+        }
+
+    def _reequilibrer_pour_rush(self, prospectif: dict):
+        """Réorganise entry_queue pour absorber le rush entrant.
+
+        Stratégie :
+          - Urgents en tête (déjà la règle, on renforce)
+          - Parmi les non-urgents : tubes avec workflow court d'abord
+            → libérer les techniciens rapidement avant l'afflux
+        Enregistre l'action dans stats_history["anticipations"].
+        """
+        if not self.entry_queue:
+            return
+        avant = len(self.entry_queue)
+        urgents     = [t for t in self.entry_queue if t.get("urgent")]
+        non_urgents = [t for t in self.entry_queue if not t.get("urgent")]
+        # Courts workflows d'abord → maximise le throughput avant la vague
+        non_urgents.sort(key=lambda t: len(t.get("workflow", [])))
+        self.entry_queue = urgents + non_urgents
+
+        self.stats_history.setdefault("anticipations", deque(maxlen=2_000))
+        self.stats_history["anticipations"].append({
+            "t":                    self.env.now,
+            "nb_entrants_prevus":   prospectif["nb_total"],
+            "nb_urgents_prevus":    prospectif["nb_urgents"],
+            "queue_reordonnee":     avant,
+            "par_service":          dict(prospectif["par_service"]),
+        })
 
     def coordinateur_process(self):
         """Process SimPy : évalue la tension du labo toutes les N minutes simulées.
@@ -1201,13 +1724,29 @@ class TabLive:
             if snap.zone in ("VIGILANCE", "CRITIQUE"):
                 self._escalader_tubes_vieillissants(self.env.now)
 
+            # ── Analyse prospective : anticipation des rushes entrants ────────────
+            prospectif = self._analyse_prospective(horizon_min=20.0)
+            event["prospectif"] = {
+                "nb_entrants_prevus":  prospectif["nb_total"],
+                "nb_urgents_prevus":   prospectif["nb_urgents"],
+                "rush_detecte":        prospectif["rush_detecte"],
+                "urgence_critique":    prospectif["urgence_critique"],
+                "par_service":         prospectif["par_service"],
+            }
+            if prospectif["rush_detecte"] or prospectif["urgence_critique"]:
+                if self.anticipation_active:
+                    self._reequilibrer_pour_rush(prospectif)
+
             # ── Appel IA si zone VIGILANCE (pic imminent) ou CRITIQUE ────────────
-            if snap.zone in ("VIGILANCE", "CRITIQUE") and self.coordinateur.ia_active:
+            # Jamais en mode headless : l'appel Ollama est synchrone et bloquerait
+            # le thread de simulation pour chaque tick en zone de stress.
+            if snap.zone in ("VIGILANCE", "CRITIQUE") and self.coordinateur.ia_active and not self.headless:
                 nb_actifs = sum(1 for t in self.technicians
                                 if not t.en_arret_maladie and t.en_service)
                 nb_pannes = len(self.panne_machines)
                 reponse = self.coordinateur.consulter_ia(
-                    snap, nb_actifs, nb_pannes, headless=self.headless)
+                    snap, nb_actifs, nb_pannes, headless=self.headless,
+                    prospectif=prospectif)
                 if reponse:   # synchrone (headless) : appliquer immédiatement
                     self.coordinateur.appliquer_reponse_ia(reponse)
                     event["ia_reponse"] = reponse
@@ -1230,6 +1769,18 @@ class TabLive:
         """Génère des tubes pour un fournisseur et les place dans sa file navette.
 
         Paramètres lus depuis fconf à chaque tirage (modifications en live).
+
+        Paramètres optionnels de variabilité par service :
+          surge_proba       : prob. par tube de déclencher un rush (0.0–1.0)
+          surge_facteur     : multiplicateur de fréquence durant le rush (ex: 4.0)
+          surge_duree_min   : durée min du rush en minutes sim
+          surge_duree_max   : durée max du rush en minutes sim
+          pause_proba       : prob. par tube d'une interruption imprévisible
+          pause_duree_min   : durée min de la pause en minutes sim
+          pause_duree_max   : durée max de la pause en minutes sim
+          batch_proba       : prob. d'une arrivée en lot (ex: fin d'opération)
+          batch_min         : nombre min de tubes dans le lot
+          batch_max         : nombre max de tubes dans le lot
         """
         profil_defaut = [
             [0.0, 0.1], [7.0, 0.8], [9.0, 1.8], [17.0, 0.4], [24.0, 0.1],
@@ -1248,86 +1799,152 @@ class TabLive:
                     return max(0.05, f0 + alpha * (f1 - f0))
             return max(0.05, profil[-1][1])
 
+        _surge_fin = 0.0  # heure sim de fin du rush en cours
+        _pause_fin = 0.0  # heure sim de fin de la pause en cours
+
         while self.running:
-            # Tirer l'inter-arrivée
+            # --- 1. Calcul de l'inter-arrivée (surge boost si actif) ---
             freq_base = float(fconf.get("frequence_base", 30))
             gamma_k   = float(fconf.get("gamma_k", 2.0))
             facteur   = _facteur(self.env.now)
-            freq_mod  = max(0.5, freq_base / facteur)
-            theta     = freq_mod / gamma_k
-            inter     = random.gammavariate(gamma_k, theta)
+            if self.env.now < _surge_fin:
+                # Rush en cours : facteur augmenté → tubes plus fréquents
+                facteur *= float(fconf.get("surge_facteur", 3.0))
+            freq_mod = max(0.5, freq_base / facteur)
+            theta    = freq_mod / gamma_k
+            inter    = random.gammavariate(gamma_k, theta)
             yield self.env.timeout(inter)
 
             if not self.types_tubes or not fconf.get("actif", True):
                 continue
 
-            # Choisir le type de tube parmi ceux que ce fournisseur émet
-            types_emis  = fconf.get("types_tubes_emis", list(self.types_tubes.keys()))
+            # --- 2. Pause imprévisible (coursier en retard, problème interne) ---
+            pause_proba = float(fconf.get("pause_proba", 0.0))
+            if pause_proba > 0 and self.env.now >= _pause_fin and random.random() < pause_proba:
+                p_min = float(fconf.get("pause_duree_min", 5))
+                p_max = float(fconf.get("pause_duree_max", 20))
+                duree_pause = random.uniform(p_min, max(p_min, p_max))
+                _pause_fin  = self.env.now + duree_pause
+                _stats = self.navette_stats.setdefault(fid, {})
+                _stats["nb_pauses"] = _stats.get("nb_pauses", 0) + 1
+                yield self.env.timeout(duree_pause)
+                continue  # recalcul de l'inter-arrivée après la pause
+
+            # --- 3. Déclenchement d'un nouveau rush (si pas déjà en surge) ---
+            surge_proba = float(fconf.get("surge_proba", 0.0))
+            if surge_proba > 0 and self.env.now >= _surge_fin and random.random() < surge_proba:
+                s_min      = float(fconf.get("surge_duree_min", 15))
+                s_max      = float(fconf.get("surge_duree_max", 45))
+                _surge_fin = self.env.now + random.uniform(s_min, max(s_min, s_max))
+                _stats = self.navette_stats.setdefault(fid, {})
+                _stats["nb_surges"] = _stats.get("nb_surges", 0) + 1
+
+            # --- 4. Arrivée en lot (fin d'opération, livraison groupée) ---
+            batch_proba = float(fconf.get("batch_proba", 0.0))
+            if batch_proba > 0 and random.random() < batch_proba:
+                b_min    = int(fconf.get("batch_min", 2))
+                b_max    = int(fconf.get("batch_max", 5))
+                nb_tubes = random.randint(b_min, max(b_min, b_max))
+            else:
+                nb_tubes = 1
+
+            # --- 5. Choisir le type de tube parmi ceux que ce fournisseur émet ---
+            types_emis    = fconf.get("types_tubes_emis", list(self.types_tubes.keys()))
             types_valides = [t for t in types_emis if t in self.types_tubes]
             if not types_valides:
                 types_valides = list(self.types_tubes.keys())
             if not types_valides:
                 continue
 
-            nom_type = random.choice(types_valides)
-            conf     = self.types_tubes[nom_type]
+            # --- 6. Créer et déposer les tubes (nb_tubes fois) ---
+            for _ in range(nb_tubes):
+                nom_type = random.choice(types_valides)
+                conf     = self.types_tubes[nom_type]
 
-            _dv_min = int(conf.get("duree_validite_min", 0))
-            _dv_max = int(conf.get("duree_validite_max", _dv_min))
-            _dv     = random.randint(_dv_min, max(_dv_min, _dv_max)) if _dv_min > 0 else 0
+                _dv_min = int(conf.get("duree_validite_min", 0))
+                _dv_max = int(conf.get("duree_validite_max", _dv_min))
+                _dv     = random.randint(_dv_min, max(_dv_min, _dv_max)) if _dv_min > 0 else 0
 
-            tube = {
-                "type":           nom_type,
-                "workflow":       list(conf.get("workflow", [])),
-                "couleur":        conf.get("couleur", "#3498db"),
-                "arrivee":        self.env.now,   # mis à jour à la livraison navette
-                "t_generation":   self.env.now,
-                "urgent":         random.random() < float(fconf.get("pct_urgent", 0.05)),
-                "duree_validite": _dv,
-                "fournisseur":    fid,
-                "id":             None,
-            }
+                tube = {
+                    "type":           nom_type,
+                    "workflow":       list(conf.get("workflow", [])),
+                    "couleur":        conf.get("couleur", "#3498db"),
+                    "arrivee":        self.env.now,
+                    "t_generation":   self.env.now,
+                    "urgent":         random.random() < float(fconf.get("pct_urgent", 0.05)),
+                    "duree_validite": _dv,
+                    "fournisseur":    fid,
+                    "id":             None,
+                }
 
-            # Déposer dans la file navette
-            if fid not in self.navette_queues:
-                self.navette_queues[fid] = []
-            self.navette_queues[fid].append(tube)
+                if fid not in self.navette_queues:
+                    self.navette_queues[fid] = []
+                self.navette_queues[fid].append(tube)
+                self.stats_tubes_total += 1
+
             self.navette_stats[fid]["en_queue"] = len(self.navette_queues[fid])
-            self.stats_tubes_total += 1
 
     def navette_process(self, fid: str, fconf: dict, navette_conf: dict):
-        """Gère les départs et le transit de la navette pour un fournisseur.
+        """Gère les ramassages de la navette avec planning jour/nuit et imprévus.
 
-        Modes de départ :
-          horaire  → part toutes les ``frequence_depart_min`` minutes sim
-          pleine   → part quand la queue atteint ``capacite_max``
-          hybride  → horaire OU dès qu'un urgent arrive (si priorite_urgents)
+        Paramètres navette_conf :
+          heure_debut_jour   : début de la plage diurne (défaut 6.0)
+          heure_fin_jour     : fin de la plage diurne (défaut 22.0)
+          frequence_jour_min : intervalle de ramassage en journée, en minutes (défaut 30)
+          facteur_nuit       : fraction du service offerte la nuit vs le jour (défaut 0.5)
+                               → freq_nuit = frequence_jour / facteur_nuit (ex: 30/0.5 = 60 min)
+          capacite_max       : nombre max de tubes par ramassage (défaut 20)
+          priorite_urgents   : départ anticipé si tube urgent en queue (défaut True)
+          imprevu_proba      : probabilité d'un retard imprévu par ramassage (défaut 0.05)
+          imprevu_delay_min  : retard min en minutes (défaut 10)
+          imprevu_delay_max  : retard max en minutes (défaut 45)
         """
+        def _heure_actuelle() -> float:
+            """Heure de la journée (0–24) correspondant au temps SimPy courant."""
+            return (self.heure_debut_sim + self.env.now / 60.0) % 24.0
+
         while self.running:
-            mode     = navette_conf.get("mode_depart", "hybride")
-            freq_dep = float(navette_conf.get("frequence_depart_min", 30))
-            cap      = int(navette_conf.get("capacite_max", 20))
-            priorite = navette_conf.get("priorite_urgents", True)
-            trajet   = float(fconf.get("duree_trajet_min", 10.0))
+            # --- Paramètres (relus à chaque cycle pour prise en compte live) ---
+            cap           = int(navette_conf.get("capacite_max", 20))
+            priorite      = navette_conf.get("priorite_urgents", True)
+            trajet        = float(fconf.get("duree_trajet_min", 10.0))
+            freq_jour     = float(navette_conf.get("frequence_jour_min", 30))
+            h_deb_jour    = float(navette_conf.get("heure_debut_jour", 6.0))
+            h_fin_jour    = float(navette_conf.get("heure_fin_jour", 22.0))
+            facteur_nuit  = max(0.05, float(navette_conf.get("facteur_nuit", 0.5)))
+            imprevu_proba = float(navette_conf.get("imprevu_proba", 0.05))
+            imprevu_min   = float(navette_conf.get("imprevu_delay_min", 10))
+            imprevu_max   = float(navette_conf.get("imprevu_delay_max", 45))
 
-            queue = self.navette_queues.get(fid, [])
+            # --- Cadence selon l'heure courante ---
+            heure_act = _heure_actuelle()
+            if h_deb_jour <= heure_act < h_fin_jour:
+                freq = freq_jour                          # plage diurne
+            else:
+                freq = freq_jour / facteur_nuit           # nuit : service réduit
 
-            if mode == "horaire":
-                yield self.env.timeout(freq_dep)
-
-            elif mode == "pleine":
-                t_max = self.env.now + freq_dep * 3
-                while len(queue) < cap and self.env.now < t_max and self.running:
-                    yield self.env.timeout(1)
-
-            else:  # hybride (défaut)
-                t_depart = self.env.now + freq_dep
+            # --- Attente jusqu'au prochain ramassage planifié ---
+            t_depart = self.env.now + freq
+            if self.headless:
+                # Headless : saut direct — pas de polling à 1-min (réduit ~10× le nombre
+                # d'events SimPy par navette, évite les faux freeze sur simulations longues)
+                yield self.env.timeout(freq)
+            else:
                 while self.env.now < t_depart and self.running:
+                    queue = self.navette_queues.get(fid, [])
                     if priorite and any(t.get("urgent") for t in queue):
-                        break
-                    yield self.env.timeout(1)
+                        break   # départ anticipé si urgent détecté
+                    yield self.env.timeout(min(1.0, t_depart - self.env.now))
 
-            # Prendre jusqu'à cap tubes de la file
+            # --- Imprévu : retard aléatoire du coursier ---
+            if imprevu_proba > 0 and random.random() < imprevu_proba:
+                retard = random.uniform(imprevu_min, max(imprevu_min, imprevu_max))
+                _s = self.navette_stats.setdefault(fid, {})
+                _s["nb_imprévus"]       = _s.get("nb_imprévus", 0) + 1
+                _s["retard_cumule_min"] = _s.get("retard_cumule_min", 0.0) + retard
+                yield self.env.timeout(retard)
+
+            # --- Ramassage : prendre jusqu'à cap tubes ---
             queue = self.navette_queues.get(fid, [])
             lot   = queue[:cap]
             self.navette_queues[fid] = queue[cap:]
@@ -1341,10 +1958,26 @@ class TabLive:
             stats["en_transit"]    = stats.get("en_transit", 0) + len(lot)
             stats["total_envoye"]  = stats.get("total_envoye", 0) + len(lot)
             stats["en_queue"]      = len(self.navette_queues.get(fid, []))
+            stats["nb_ramassages"] = stats.get("nb_ramassages", 0) + 1
             self.navette_stats[fid] = stats
 
-            # Transit (délai de transport)
+            # --- Transit vers le labo (suivi prospectif) ---
+            eta_labo = self.env.now + trajet
+            for tube in lot:
+                tube["eta_labo"] = eta_labo   # ETA exacte connue dès le ramassage
+            if fid not in self.navette_en_transit:
+                self.navette_en_transit[fid] = []
+            self.navette_en_transit[fid].extend(lot)
+
             yield self.env.timeout(trajet)
+
+            # Retirer du suivi prospectif
+            en_tr = self.navette_en_transit.get(fid, [])
+            for tube in lot:
+                try:
+                    en_tr.remove(tube)
+                except ValueError:
+                    pass
 
             # Livraison au labo
             now = self.env.now
@@ -1361,6 +1994,10 @@ class TabLive:
                 heure_abs = int((now / 60 + self.heure_debut_sim)) % 24
                 aph       = self.stats_history["arrivees_par_heure"]
                 aph[heure_abs] = aph.get(heure_abs, 0) + 1
+                aphs = self.stats_history["arrivees_par_heure_par_service"]
+                if heure_abs not in aphs:
+                    aphs[heure_abs] = {}
+                aphs[heure_abs][fid] = aphs[heure_abs].get(fid, 0) + 1
 
                 if not self.headless:
                     ox = random.randint(-8, 8)
@@ -1506,6 +2143,10 @@ class TabLive:
                         heure_abs = int((self.env.now / 60 + self.heure_debut_sim)) % 24
                         aph = self.stats_history["arrivees_par_heure"]
                         aph[heure_abs] = aph.get(heure_abs, 0) + 1
+                        aphs = self.stats_history["arrivees_par_heure_par_service"]
+                        if heure_abs not in aphs:
+                            aphs[heure_abs] = {}
+                        aphs[heure_abs][nom_type] = aphs[heure_abs].get(nom_type, 0) + 1
                     self.stats_tubes_total += 1
 
                 self.prochaine_arrivee = self.env.now + prochaine_interarrivee()
@@ -1818,7 +2459,9 @@ class TabLive:
 
             # --- Priorité 2 : nouveau(x) tube(s) en attente à l'entrée ---
             if not self.entry_queue or not entrees:
-                yield self.env.timeout(0.5)
+                # Headless : tick plus large → 4× moins d'events SimPy sans affecter le résultat
+                idle_tick = 2.0 if self.headless else 0.5
+                yield self.env.timeout(idle_tick)
                 # Récupération légère pendant les périodes d'inactivité
                 tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.001)
                 self._update_tech_sprite_fatigue(tech)
@@ -1885,9 +2528,10 @@ class TabLive:
 
             if not self.headless and self.canvas.winfo_exists():
                 for tube in tech.carried_tubes:
-                    self.canvas.coords(tube["id"],
-                                      tech.x-6, tech.y-6,
-                                      tech.x+6, tech.y+6)
+                    if tube.get("id"):
+                        self.canvas.coords(tube["id"],
+                                          tech.x-6, tech.y-6,
+                                          tech.x+6, tech.y+6)
 
             yield self.env.process(self._livrer_tubes(tech, tech.carried_tubes, machines, sorties))
             tech.carried_tubes = []
@@ -2020,7 +2664,13 @@ class TabLive:
                         or (has_urgent and len(queue) >= seuil)
                         or len(queue) >= file_max
                     )
-                    if should_trigger and nom_machine not in self.blinking_machines:
+                    # GARDE : _machines_batch_actif est la source de vérité.
+                    # blinking_machines est discardé AVANT le finally-block de
+                    # traiter_batch_machine, créant une fenêtre où le tech peut
+                    # spawner un deuxième batch concurrent → accumulation de
+                    # processus SimPy et blocage stochastique.
+                    if should_trigger and nom_machine not in self._machines_batch_actif:
+                        self._machines_batch_actif.add(nom_machine)
                         self.env.process(self.traiter_batch_machine(nom_machine, machine))
 
                     # ── Travail manuel : UN SEUL tech à poste ─────────────────────────
@@ -2101,7 +2751,12 @@ class TabLive:
                 for tube in vers_sortie:
                     if "arrivee" in tube:
                         tat = now - tube["arrivee"]
+                        # Si la deque est pleine, soustraire l'élément qui va être évincé
+                        # pour garder _transit_sum cohérent sans sum() O(n).
+                        if len(self.transit_times_raw) == self.transit_times_raw.maxlen:
+                            self._transit_sum -= self.transit_times_raw[0]
                         self.transit_times_raw.append(tat)
+                        self._transit_sum += tat
                         if tube.get("urgent"):
                             self.transit_times_urgents.append(tat)
                 # Retirer + supprimer APRÈS l'arrivée
@@ -2118,8 +2773,9 @@ class TabLive:
 
             # Si certains tubes n'ont pas pu être déposés (file pleine), attendre et réessayer
             if tubes_reportes:
-                etapes_bloquees = list({t["workflow"][0] for t in tubes_reportes if t.get("workflow")})
-                print(f"[INFO] {len(tubes_reportes)} tube(s) en attente (machines pleines pour {etapes_bloquees}), retry dans 2 min")
+                if not self.headless:
+                    etapes_bloquees = list({t["workflow"][0] for t in tubes_reportes if t.get("workflow")})
+                    print(f"[INFO] {len(tubes_reportes)} tube(s) en attente (machines pleines pour {etapes_bloquees}), retry dans 2 min")
                 # Libérer les anciennes réservations (machine était pleine) et en faire
                 # de nouvelles sur le prochain slot disponible (peut être une autre machine)
                 self._liberer_reservations(tubes_reportes)
@@ -2262,86 +2918,93 @@ class TabLive:
         )
 
     def traiter_batch_machine(self, nom_machine, machine, force_batch_size=None):
-        """Traite un batch de tubes sur une machine et les place en file de sortie.
+        # Anti-doublon : _machines_batch_actif gere sans recursion yield-from.
+        # Auto-restart via env.process() => nouveau frame plat a chaque batch.
+        self._machines_batch_actif.add(nom_machine)
+        _respawn = False
+        try:
+            capacite = machine.get("capacite", 4)
+            if force_batch_size is not None:
+                capacite = min(capacite, force_batch_size)
+            mu, mv, ma = self.coordinateur.poids_courants
+            _trier_queue_par_priorite(self.machine_queues[nom_machine], self.env.now, mu, mv, ma)
+            batch = self.machine_queues[nom_machine][:capacite]
+            del self.machine_queues[nom_machine][:capacite]
 
-        force_batch_size : si fourni, limite le batch à ce nombre (ex. 1 pour urgents
-        isolés en mode ACCELERER IA).
-        """
-        capacite = machine.get("capacite", 4)
-        if force_batch_size is not None:
-            capacite = min(capacite, force_batch_size)
-        # Trier la file par priorité composite avant d'extraire le batch :
-        # urgent > % validité consommée > ancienneté → les tubes les plus critiques
-        # sont toujours dans les premiers slots, même si déposés tardivement.
-        # Les multiplicateurs de stress du coordinateur amplifient la séparation.
-        mu, mv, ma = self.coordinateur.poids_courants
-        _trier_queue_par_priorite(self.machine_queues[nom_machine], self.env.now, mu, mv, ma)
-        batch = self.machine_queues[nom_machine][:capacite]
-        del self.machine_queues[nom_machine][:capacite]
+            self.blinking_machines.add(nom_machine)
+            self.env.process(self._blink_machine(nom_machine))
 
-        # Démarrer le clignotement
-        self.blinking_machines.add(nom_machine)
-        self.env.process(self._blink_machine(nom_machine))
+            if not self.headless and self.canvas.winfo_exists():
+                for tube in batch:
+                    if tube.get("id"):
+                        self.canvas.itemconfig(tube["id"], fill="#2980b9", outline="#1a5276", width=2)
 
-        # Feedback visuel : tubes en cours de traitement (bleu foncé)
-        if not self.headless and self.canvas.winfo_exists():
-            for tube in batch:
-                if tube.get("id"):
-                    self.canvas.itemconfig(tube["id"], fill="#2980b9", outline="#1a5276", width=2)
+            if not self.headless and nom_machine in self.machine_labels:
+                self.canvas.itemconfig(self.machine_labels[nom_machine], text=f"{nom_machine}: Traitement...")
 
-        if not self.headless and nom_machine in self.machine_labels:
-            self.canvas.itemconfig(self.machine_labels[nom_machine], text=f"{nom_machine}: Traitement...")
+            protocoles = machine.get("protocoles", {})
+            etape = next(iter(protocoles), None)
+            temps = protocoles[etape].get("temps", 60) if etape else 60
 
-        # Temps de traitement depuis le premier protocole de la machine
-        protocoles = machine.get("protocoles", {})
-        etape = next(iter(protocoles), None)
-        temps = protocoles[etape].get("temps", 60) if etape else 60
-        yield self.env.timeout(temps / 10)
+            if self._debug_mode:
+                self._debug_entries.append({
+                    "ev": "batch_start", "t": self.env.now,
+                    "machine": nom_machine, "batch_sz": len(batch),
+                    "temps": temps, "q_restante": len(self.machine_queues.get(nom_machine, [])),
+                    "nb_batch_actifs": len(self._machines_batch_actif),
+                })
+                if temps == 0:
+                    self._debug_entries.append({
+                        "ev": "WARN_TEMPS_ZERO", "t": self.env.now, "machine": nom_machine
+                    })
 
-        # === Vérification dégradation : tubes trop longtemps en attente ===
-        delai_max = machine.get("delai_max_avant_degrad", None)
-        if delai_max is not None:
-            batch_valides = []
-            for tube in batch:
-                attente_totale = self.env.now - tube.get("arrivee", self.env.now)
-                if attente_totale > delai_max:
-                    self.tubes_degrades += 1
-                    if not self.headless and self.canvas.winfo_exists() and tube.get("id"):
-                        self.canvas.itemconfig(tube["id"], fill="#95a5a6", outline="#7f8c8d", width=1)
-                        tid = tube["id"]
-                        self.canvas.after(800, lambda t=tid: self.canvas.delete(t) if self.canvas.winfo_exists() else None)
-                else:
-                    batch_valides.append(tube)
-            batch = batch_valides
+            yield self.env.timeout(temps / 10)
 
-        # === Machine en panne pendant le traitement (processus TMEP/TMR indépendant) ===
-        # Si la machine a subi une panne pendant ce batch, attendre la fin de réparation
-        # avant de libérer les tubes. Le batch est préservé (pas de perte).
-        if nom_machine in self.panne_machines:
-            repair_ev = self.machine_repair_events.get(nom_machine)
-            if repair_ev is not None and not repair_ev.triggered:
-                yield repair_ev
+            delai_max = machine.get("delai_max_avant_degrad", None)
+            if delai_max is not None:
+                batch_valides = []
+                for tube in batch:
+                    attente_totale = self.env.now - tube.get("arrivee", self.env.now)
+                    if attente_totale > delai_max:
+                        self.tubes_degrades += 1
+                        if not self.headless and self.canvas.winfo_exists() and tube.get("id"):
+                            self.canvas.itemconfig(tube["id"], fill="#95a5a6", outline="#7f8c8d", width=1)
+                            tid = tube["id"]
+                            self.canvas.after(800, lambda t=tid: self.canvas.delete(t) if self.canvas.winfo_exists() else None)
+                    else:
+                        batch_valides.append(tube)
+                batch = batch_valides
 
-        # Traitement terminé : feedback visuel (vert = prêt à être récupéré)
-        if not self.headless and self.canvas.winfo_exists():
-            for tube in batch:
-                if tube.get("id"):
-                    self.canvas.itemconfig(tube["id"],
-                                          fill=tube.get("couleur", "#27ae60"),
-                                          outline="#27ae60", width=2)
+            if nom_machine in self.panne_machines:
+                repair_ev = self.machine_repair_events.get(nom_machine)
+                if repair_ev is not None and not repair_ev.triggered:
+                    yield repair_ev
 
-        # Placer les tubes en file de sortie (workflow déjà à jour depuis le dépôt)
-        if nom_machine not in self.output_queues:
-            self.output_queues[nom_machine] = []
-        self.output_queues[nom_machine].extend(batch)
+            if not self.headless and self.canvas.winfo_exists():
+                for tube in batch:
+                    if tube.get("id"):
+                        self.canvas.itemconfig(tube["id"],
+                                              fill=tube.get("couleur", "#27ae60"),
+                                              outline="#27ae60", width=2)
 
-        # Arrêter le clignotement
-        self.blinking_machines.discard(nom_machine)
+            if nom_machine not in self.output_queues:
+                self.output_queues[nom_machine] = []
+            self.output_queues[nom_machine].extend(batch)
 
-        # Relancer automatiquement si des tubes restent — toujours, sans condition de seuil.
-        # La condition seuil/file_max est réservée au déclenchement INITIAL depuis un dépôt tech.
-        # Pour les machines à opérateur requis : l'auto-restart est une continuation du batch
-        # déjà autorisé par le tech — pas besoin de re-vérifier paillasse_analyste.
-        queue_restante = self.machine_queues.get(nom_machine, [])
-        if queue_restante:
-            self.env.process(self.traiter_batch_machine(nom_machine, machine))
+            self.blinking_machines.discard(nom_machine)
+
+            if self.machine_queues.get(nom_machine):
+                _respawn = True
+
+        finally:
+            # SimPy est single-threaded : pas de yield entre discard et add
+            # => aucune fenetre d ouverture pour un doublon.
+            self._machines_batch_actif.discard(nom_machine)
+            if _respawn:
+                if self._debug_mode:
+                    self._debug_entries.append({
+                        "ev": "respawn", "t": self.env.now, "machine": nom_machine,
+                        "q_restante": len(self.machine_queues.get(nom_machine, [])),
+                    })
+                self._machines_batch_actif.add(nom_machine)
+                self.env.process(self.traiter_batch_machine(nom_machine, machine))

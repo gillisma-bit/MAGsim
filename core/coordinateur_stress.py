@@ -210,7 +210,8 @@ class CoordonnateurStress:
 
     # ── Appel IA (Qwen local via Ollama) ─────────────────────────────────────
     def consulter_ia(self, snap: SnapshotStress, nb_techs_actifs: int,
-                     nb_machines_en_panne: int, headless: bool = False) -> Optional[dict]:
+                     nb_machines_en_panne: int, headless: bool = False,
+                     prospectif: dict | None = None) -> Optional[dict]:
         """Interroge Qwen 2.5 32B pour des ajustements de poids.
 
         En mode headless (benchmark) : appel synchrone, bloque jusqu'à réponse.
@@ -223,6 +224,12 @@ class CoordonnateurStress:
         Retourne un dict {"mult_urgence": float, "mult_validite": float,
                           "action": str, "justification": str} ou None si échec / cooldown.
         """
+        # Garde absolue : jamais d'appel Ollama en mode headless (synchrone, bloquant).
+        # Cette vérification est dupliquée dans coordinateur_process pour la lisibilité,
+        # mais cette garde-ci protège aussi les appels directs depuis les tests/benchmarks.
+        if headless:
+            return None
+
         if not self.ia_active:
             return None
 
@@ -237,6 +244,10 @@ class CoordonnateurStress:
             facteur_max_2h = self._facteur_max_prochaines_heures(snap.heure_reelle, nb_heures=2)
             if facteur_max_2h < snap.facteur_horaire * 1.3:
                 return None  # pas de pic imminent, pas d'anticipation utile
+
+        # Log explicite avant tout appel réseau (visible dans la console)
+        mode = "SYNC/headless" if headless else "ASYNC/thread"
+        print(f"[IA-Qwen] Appel {mode} — zone={snap.zone}, t={snap.t:.0f} min sim")
 
         try:
             import ollama
@@ -267,10 +278,22 @@ class CoordonnateurStress:
             },
         }
 
+        # Enrichir avec les données prospectives réelles (tubes déjà en transit/queue)
+        if prospectif:
+            contexte["prospectif"] = {
+                "tubes_attendus_20min": prospectif.get("nb_total", 0),
+                "urgents_attendus_20min": prospectif.get("nb_urgents", 0),
+                "rush_detecte": prospectif.get("rush_detecte", False),
+                "urgence_critique": prospectif.get("urgence_critique", False),
+                "par_service": prospectif.get("par_service", {}),
+                "charge_workflows": prospectif.get("charge_workflows", {}),
+            }
+
         prompt_systeme = (
             "Tu es le coordinateur IA d'un laboratoire de cardiologie hospitalier. "
             "Tu reçois un instantané de l'état du flux de tubes d'analyse, "
-            "incluant le profil de charge des prochaines heures. "
+            "incluant le profil de charge des prochaines heures "
+            "ET les tubes déjà en transit/queue (données prospectives certaines). "
             "Ton rôle : ajuster les multiplicateurs de priorité pour optimiser le débit "
             "et éviter les péremptions, y compris par anticipation des pics. "
             "Réponds UNIQUEMENT en JSON valide, rien d'autre. "
@@ -278,7 +301,7 @@ class CoordonnateurStress:
             '{"mult_urgence": <float 1.0-5.0>, "mult_validite": <float 1.0-5.0>, '
             '"action": "<STABLE|ACCELERER|REDISTRIBUER|ANTICIPER>", '
             '"justification": "<max 20 mots>"}'
-            " — ANTICIPER = pic détecté dans 1-3h, abaisser les seuils AVANT le rush."
+            " — ANTICIPER = tubes en transit détectés, agir AVANT leur arrivée."
         )
 
         prompt_user = (

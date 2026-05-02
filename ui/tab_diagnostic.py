@@ -451,9 +451,7 @@ class TabDiagnostic:
 
     def _obs_depuis_simulation(self, hist, machines, techniciens):
         """Génère les observations basées sur stats_history après simulation."""
-        times = hist["time"]
-        if not times:
-            return
+        times = list(hist["time"])
 
         t_total = times[-1]   # durée totale en minutes SimPy
         JOUR = 1440.0

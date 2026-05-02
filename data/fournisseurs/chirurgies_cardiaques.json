@@ -4,15 +4,26 @@
     "couleur": "#e74c3c",
     "icone": "🫀",
     "position_canvas": {
-        "x": 120,
-        "y": 160
+        "x": 40,
+        "y": 140
     },
-    "duree_trajet_min": 8.0,
+    "duree_trajet_min": 1.6,
     "actif": true,
     "frequence_base": 40.0,
     "gamma_k": 3.0,
     "heure_debut": 7.0,
     "pct_urgent": 0.3,
+    "_commentaire_flux": "Flux par opérations. Fin d'intervention = lot de tubes. Pauses entre procédures. Rush si urgence cardiaque.",
+    "surge_proba": 0.015,
+    "surge_facteur": 5.0,
+    "surge_duree_min": 15,
+    "surge_duree_max": 40,
+    "pause_proba": 0.025,
+    "pause_duree_min": 20,
+    "pause_duree_max": 90,
+    "batch_proba": 0.20,
+    "batch_min": 3,
+    "batch_max": 8,
     "profil_horaire": [
         [
             0.0,
@@ -73,5 +84,31 @@
     ],
     "types_tubes_emis": [
         "tube1"
+    ],
+    "chemin_waypoints": [
+        [
+            240,
+            182
+        ],
+        [
+            340,
+            180
+        ],
+        [
+            340,
+            180
+        ],
+        [
+            440,
+            180
+        ],
+        [
+            440,
+            320
+        ],
+        [
+            600,
+            320
+        ]
     ]
 }

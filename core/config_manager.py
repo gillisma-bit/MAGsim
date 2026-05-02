@@ -210,3 +210,23 @@ class ConfigManager:
         path = os.path.join(dossier, f"{nid}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(navette, f, indent=4, ensure_ascii=False)
+
+    # ── GESTION DES ZONES ────────────────────────────────────────────────
+    def get_zones(self) -> list:
+        """Charge et retourne les zones depuis data/zones.json."""
+        path = os.path.join(os.path.dirname(self.filepath), "zones.json")
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return data.get("zones", [])
+        except Exception as e:
+            print(f"[CONFIG] Erreur lecture zones.json: {e}")
+            return []
+
+    def sauvegarder_zones(self, zones: list):
+        """Sauvegarde la liste des zones dans data/zones.json."""
+        path = os.path.join(os.path.dirname(self.filepath), "zones.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"zones": zones}, f, indent=4, ensure_ascii=False)

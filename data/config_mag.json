@@ -16,9 +16,10 @@
             },
             "seuil": 1,
             "file_max": 10,
-            "tmep": 6,
+            "tmep": 200.0,
             "tmr": 0.5,
-            "delai_max_avant_degrad": 240
+            "delai_max_avant_degrad": 240,
+            "tech_requis_poste": false
         },
         "au1": {
             "type": "Automate",
@@ -124,7 +125,7 @@
             "tech_requis_poste": true,
             "coords": {
                 "x": 675,
-                "y": 425
+                "y": 325
             },
             "capacite": 5,
             "protocoles": {
@@ -146,8 +147,8 @@
         "b1": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 675,
-                "y": 875
+                "x": 675.0,
+                "y": 875.0
             },
             "capacite": 4,
             "protocoles": {},
@@ -157,13 +158,14 @@
             "seuil_charge_fatigue": 0.7,
             "taux_montee_fatigue": 0.01,
             "capacite_max_tubes": 10,
-            "nom": "Marc"
+            "nom": "Marc",
+            "taux_recuperation_nuit": 0.15
         },
         "b2": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 775,
-                "y": 875
+                "x": 775.0,
+                "y": 875.0
             },
             "capacite": 4,
             "file_max": 4,
@@ -175,7 +177,8 @@
             "seuil_charge_fatigue": 0.75,
             "taux_montee_fatigue": 0.008,
             "capacite_max_tubes": 12,
-            "nom": "Antoine"
+            "nom": "Antoine",
+            "taux_recuperation_nuit": 0.15
         },
         "pa2": {
             "type": "Paillasse",
@@ -216,9 +219,10 @@
                     "type_compatible": "Centrifugeuse"
                 }
             },
-            "tmep": 6,
+            "tmep": 200.0,
             "tmr": 0.5,
-            "delai_max_avant_degrad": 240
+            "delai_max_avant_degrad": 240,
+            "tech_requis_poste": false
         },
         "Arnaud": {
             "type": "TECH_OFFICE",
@@ -311,6 +315,17 @@
             "coords": {
                 "x": 1075,
                 "y": 975
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {}
+        },
+        "centri3": {
+            "type": "Centrifugeuse",
+            "coords": {
+                "x": 475,
+                "y": 675
             },
             "capacite": 4,
             "file_max": 4,
@@ -448,14 +463,11 @@
         "21_11": "COUNTER",
         "18_13": "COUNTER",
         "17_13": "COUNTER",
-        "16_13": "COUNTER",
         "15_13": "COUNTER",
         "14_13": "COUNTER",
-        "13_13": "COUNTER",
         "12_13": "COUNTER",
         "11_13": "COUNTER",
         "10_13": "COUNTER",
-        "9_13": "COUNTER",
         "8_13": "COUNTER",
         "7_13": "COUNTER",
         "6_13": "COUNTER",
@@ -486,7 +498,6 @@
         "10_8": "COUNTER",
         "11_8": "COUNTER",
         "12_8": "COUNTER",
-        "13_8": "COUNTER",
         "14_8": "COUNTER",
         "14_7": "COUNTER",
         "14_6": "COUNTER",
@@ -590,7 +601,11 @@
         "22_18": "COUNTER",
         "22_17": "COUNTER",
         "22_16": "COUNTER",
-        "23_8": "WALL"
+        "23_8": "WALL",
+        "13_8": "COUNTER",
+        "9_13": "COUNTER",
+        "13_13": "COUNTER",
+        "16_13": "COUNTER"
     },
     "catalog_protocoles": {
         "centi1": {
@@ -651,33 +666,17 @@
                 ],
                 "garde": true
             }
-        ]
+        ],
+        "pause_rotation_auto": false,
+        "pause_creneau_debut": 12.0,
+        "pause_duree_minutes": 30,
+        "garde_trajet_minutes": 20,
+        "garde_forfait_heures": 3.0,
+        "garde_samedi": "Rotation auto",
+        "garde_dimanche": "Rotation auto",
+        "garde_feries": "Rotation auto"
     },
     "horaires": {
-        "Marc": {
-            "jours": [
-                0,
-                1,
-                2,
-                3,
-                4
-            ],
-            "heure_debut": 8.0,
-            "heure_fin": 16.0,
-            "actif": true
-        },
-        "Antoine": {
-            "jours": [
-                0,
-                1,
-                2,
-                3,
-                4
-            ],
-            "heure_debut": 8.0,
-            "heure_fin": 16.0,
-            "actif": true
-        },
         "Arnaud": {
             "jours": [
                 5,
@@ -724,6 +723,36 @@
             "pause_fin": 19.0,
             "pool_garde": false,
             "actif": true
+        },
+        "Marc": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": true
+        },
+        "Antoine": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": true
         }
     }
 }

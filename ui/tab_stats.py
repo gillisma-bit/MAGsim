@@ -113,7 +113,16 @@ class TabStats:
 
         self.btn_fast = ttk.Button(fast, text="▶ Lancer",
                                    command=self.lancer_simulation_rapide)
-        self.btn_fast.pack(side=tk.LEFT, padx=10, pady=4)
+        self.btn_fast.pack(side=tk.LEFT, padx=4, pady=4)
+
+        self.btn_debug = ttk.Button(fast, text="🐛 DEBUG",
+                                    command=self.lancer_debug_rapide, width=10)
+        self.btn_debug.pack(side=tk.LEFT, padx=4, pady=4)
+
+        self.btn_stop = ttk.Button(fast, text="⏹ FORCER ARRÊT",
+                                   command=self.forcer_arret_sim, width=16)
+        self.btn_stop.pack(side=tk.LEFT, padx=4, pady=4)
+        self.btn_stop.config(state="disabled")
 
         self.progress = ttk.Progressbar(fast, mode="determinate", length=200)
         self.progress.pack(side=tk.LEFT, padx=8, pady=4)
@@ -329,7 +338,7 @@ class TabStats:
                      justify="center", pady=20).pack()
             return
 
-        times = hist["time"]
+        times = list(hist["time"])
         machines = self.config_manager.get_machines()
         noms = [n for n, m in machines.items()
                 if m["type"] not in ("ENTREE", "SORTIE", "TECH_OFFICE")]
@@ -365,8 +374,9 @@ class TabStats:
         bienetre_data  = hist.get("bienetre", {})
         has_bienetre   = bool(bienetre_data and any(bool(v) for v in bienetre_data.values()))
         show_bienetre  = self.show_bienetre.get() and has_bienetre
-        arrivees_data  = hist.get("arrivees_par_heure", {})
-        show_arrivees  = self.show_arrivees.get() and bool(arrivees_data)
+        arrivees_data          = hist.get("arrivees_par_heure", {})
+        arrivees_par_service   = hist.get("arrivees_par_heure_par_service", {})
+        show_arrivees          = self.show_arrivees.get() and bool(arrivees_data)
 
         # Liste ordonnée des graphiques actifs → index subplot dynamique
         active = [show_queues, show_output, show_occup, show_transit, show_errors, show_bienetre, show_arrivees]
@@ -411,13 +421,13 @@ class TabStats:
             ax1.xaxis.set_major_formatter(x_fmt)
             ax1.grid(True, alpha=0.3, linestyle="--")
 
-            entry_data = hist.get("entry", [])
+            entry_data = list(hist.get("entry", []))
             if entry_data:
                 ax1.plot(times[:len(entry_data)], entry_data,
                          label="ENTRÉE (non pris)", color="#2c3e50",
                          linewidth=2, linestyle="--", alpha=0.85)
             for i, nom in enumerate(noms):
-                data = hist["queues"].get(nom, [])
+                data = list(hist["queues"].get(nom, []))
                 color = COLORS[i % len(COLORS)]
                 if data:
                     ax1.plot(times[:len(data)], data,
@@ -436,7 +446,7 @@ class TabStats:
             ax2.xaxis.set_major_formatter(x_fmt)
             ax2.grid(True, alpha=0.3, linestyle="--")
             for i, nom in enumerate(noms):
-                data = hist["output"].get(nom, [])
+                data = list(hist["output"].get(nom, []))
                 if data:
                     ax2.plot(times[:len(data)], data,
                              label=nom, color=COLORS[i % len(COLORS)],
@@ -456,7 +466,7 @@ class TabStats:
 
             window = max(1, len(times) // 10)
             for i, nom in enumerate(noms):
-                raw = hist["busy"].get(nom, [])
+                raw = list(hist["busy"].get(nom, []))
                 if not raw:
                     continue
                 smoothed = []
@@ -470,9 +480,9 @@ class TabStats:
             ax3.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
         # ── Graphique temps moyen de transit ───────────────────────────
-        transit_avg     = hist.get("transit_time_avg", [])
-        transit_roll    = hist.get("transit_time_rolling", [])
-        transit_pending = hist.get("transit_time_pending_max", [])
+        transit_avg     = list(hist.get("transit_time_avg", []))
+        transit_roll    = list(hist.get("transit_time_rolling", []))
+        transit_pending = list(hist.get("transit_time_pending_max", []))
 
         def _filter_none(t_list, v_list):
             pairs = [(t, v) for t, v in zip(t_list, v_list) if v is not None]
@@ -587,8 +597,8 @@ class TabStats:
             ax5.xaxis.set_major_formatter(x_fmt)
             ax5.grid(True, alpha=0.3, linestyle="--")
 
-            rejetes_data  = hist.get("rejetes", [])
-            degrades_data = hist.get("degrades", [])
+            rejetes_data  = list(hist.get("rejetes", []))
+            degrades_data = list(hist.get("degrades", []))
             if rejetes_data:
                 ax5.plot(times[:len(rejetes_data)], rejetes_data,
                          color="#e74c3c", linewidth=2, label="Rejets (mauvais prélèv. + erreur tech)")
@@ -666,15 +676,43 @@ class TabStats:
             ax8.grid(True, alpha=0.3, linestyle="--", axis="y")
 
             heures = sorted(arrivees_data.keys())
-            valeurs = [arrivees_data[h] for h in heures]
-            bars = ax8.bar(heures, valeurs, color="#3498db", alpha=0.85,
-                           edgecolor="white", width=0.7)
-            # Annoter chaque barre
-            for bar, v in zip(bars, valeurs):
-                ax8.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
-                         str(v), ha="center", va="bottom",
-                         fontsize=8, color="#333333")
-            # Étiquettes h00, h01 …
+
+            if arrivees_par_service:
+                # Barres empilées par service
+                services = sorted({svc
+                                   for hd in arrivees_par_service.values()
+                                   for svc in hd})
+                PALETTE = [
+                    "#3498db", "#e67e22", "#2ecc71", "#9b59b6",
+                    "#e74c3c", "#1abc9c", "#f39c12", "#34495e",
+                ]
+                cumul = [0] * len(heures)
+                for i, svc in enumerate(services):
+                    vals = [arrivees_par_service.get(h, {}).get(svc, 0) for h in heures]
+                    couleur = PALETTE[i % len(PALETTE)]
+                    label = svc.replace("_", " ")
+                    ax8.bar(heures, vals, bottom=cumul,
+                            color=couleur, alpha=0.88,
+                            edgecolor="white", width=0.7, label=label)
+                    cumul = [c + v for c, v in zip(cumul, vals)]
+                # Total au sommet de chaque barre
+                for h, tot in zip(heures, cumul):
+                    if tot > 0:
+                        ax8.text(h, tot + 0.3, str(tot),
+                                 ha="center", va="bottom",
+                                 fontsize=8, color="#333333")
+                ax8.legend(fontsize=8, loc="upper left",
+                           framealpha=0.85, ncol=2)
+            else:
+                # Fallback : barre unique (données sans décomposition par service)
+                valeurs = [arrivees_data[h] for h in heures]
+                bars = ax8.bar(heures, valeurs, color="#3498db", alpha=0.85,
+                               edgecolor="white", width=0.7)
+                for bar, v in zip(bars, valeurs):
+                    ax8.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                             str(v), ha="center", va="bottom",
+                             fontsize=8, color="#333333")
+
             ax8.set_xticks(heures)
             ax8.set_xticklabels([f"{h:02d}h" for h in heures], rotation=45, ha="right")
 
@@ -756,8 +794,8 @@ class TabStats:
                           f"Occupation : {busiest_val:.0f} %"])
 
         # ─ Transit ────────────────────────────────────────────────
-        transit_avg = hist.get("transit_time_avg", [])
-        transit_roll = hist.get("transit_time_rolling", [])
+        transit_avg = list(hist.get("transit_time_avg", []))
+        transit_roll = list(hist.get("transit_time_rolling", []))
         avg_val   = next((v for v in reversed(transit_avg)  if v is not None), None)
         roll_val  = next((v for v in reversed(transit_roll) if v is not None), None)
         tr_niv = "warning" if (avg_val and avg_val > 30) else "ok"
@@ -837,6 +875,36 @@ class TabStats:
             scrollregion=self._resume_canvas.bbox("all"))
 
     # ------------------------------------------------------------------
+    def forcer_arret_sim(self):
+        """Délègue le reset brutal à tab_live puis remet l'UI de cet onglet au repos."""
+        if self.tab_live:
+            self.tab_live.forcer_arret()
+        self.btn_fast.config(state="normal")
+        self.btn_stop.config(state="disabled")
+        self.lbl_fast_status.config(text="⏹ Arrêt forcé.")
+        self.progress["value"] = 0
+
+    def lancer_debug_rapide(self):
+        """Délègue au mode DEBUG de tab_live (simulation headless instrumentée)."""
+        if not self.tab_live:
+            self.lbl_fast_status.config(text="Référence simulation manquante.")
+            return
+        if getattr(self.tab_live, "running", False):
+            self.lbl_fast_status.config(text="⚠ Simulation déjà en cours — arrêtez-la d'abord.")
+            return
+        self.btn_stop.config(state="normal")
+        self.btn_fast.config(state="disabled")
+        self.lbl_fast_status.config(text="🐛 DEBUG en cours…")
+        self.tab_live.lancer_debug(on_fin=self._on_debug_termine)
+
+    def _on_debug_termine(self):
+        """Appelé depuis le thread debug quand la session debug se termine."""
+        self.parent.after(0, lambda: (
+            self.btn_stop.config(state="disabled"),
+            self.btn_fast.config(state="normal"),
+            self.lbl_fast_status.config(text="🐛 DEBUG terminé"),
+        ))
+
     def lancer_simulation_rapide(self):
         """Déclenche une simulation headless et affiche les graphiques à la fin."""
         if not self.tab_live:
@@ -855,7 +923,14 @@ class TabStats:
             self.lbl_fast_status.config(text="Durée invalide (ex : 1, 2, 0.5).")
             return
 
+        # IA désactivée en mode headless — Qwen 32B est synchrone et bloquerait
+        # le thread pour chaque appel (potentiellement des centaines sur 10 jours).
+        self.tab_live.coordinateur.ia_active = False
+
         self.btn_fast.config(state="disabled")
+        self.btn_stop.config(state="normal")
+        if hasattr(self.tab_live, 'btn_reset'):
+            self.tab_live.btn_reset.config(state="normal")
         self.progress["value"] = 0
         self.lbl_fast_status.config(text="⏳ Calcul en cours…")
 
@@ -877,9 +952,111 @@ class TabStats:
     def _on_simulation_rapide_terminee(self):
         """Appelé sur le thread principal quand la simulation rapide est finie."""
         self.progress["value"] = 100
-        self.lbl_fast_status.config(text="✅ Terminé — graphiques mis à jour")
+        self.lbl_fast_status.config(text="✅ Terminé")
         self.btn_fast.config(state="normal")
+        self.btn_stop.config(state="disabled")
+        if hasattr(self.tab_live, 'btn_reset'):
+            self.tab_live.btn_reset.config(state="disabled")
         self.refresh()
+
+    def _ia_compte_rendu_auto(self):
+        """Envoie automatiquement une demande de compte rendu à l'IA après une sim accélérée.
+        Utilise une conversation fraîche et un contexte tronqué pour éviter les erreurs 413.
+        N'est déclenché qu'en backend GitHub — Ollama (Qwen local) n'est JAMAIS appelé
+        automatiquement pour éviter de charger la GPU sans action explicite.
+        """
+        if self._ia_en_cours or self._ia_conversation is None:
+            return
+
+        # Refuser silencieusement si le backend est Ollama (modèle local GPU)
+        if self._ia_backend != "github":
+            self.lbl_fast_status.config(text="✅ Terminé.")
+            return
+
+        stats      = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        aggregator = getattr(self.tab_live, "aggregator",    None) if self.tab_live else None
+
+        # Construire un bloc de métriques compact (agrégateur en priorité)
+        from core.ai_assistant import (
+            construire_metriques_aggregateur, construire_metriques_block,
+            envoyer_messages_github, envoyer_messages,
+        )
+        metriques = ""
+        if aggregator and aggregator.nb_jours >= 1.0:
+            metriques = construire_metriques_aggregateur(aggregator)
+        if not metriques and stats:
+            metriques = construire_metriques_block(self._ia_conversation._config, stats)
+        # Tronquer à 5000 caractères pour rester dans les limites de tokens
+        if len(metriques) > 5000:
+            metriques = metriques[:5000] + "\n… [tronqué pour limite de tokens]"
+
+        QUESTION = (
+            "Fais un compte rendu structuré en trois parties :\n"
+            "1. **Bilan global** : débit, temps de transit moyen, taux de rejet et de dégradation.\n"
+            "2. **Goulots identifiés** : quelles machines ou étapes limitent le flux, avec les chiffres clés.\n"
+            "3. **Recommandations concrètes** : au moins 3 actions précises et réalisables pour améliorer "
+            "le service. Pour chaque recommandation, indique l'impact attendu."
+        )
+
+        system_compact = (
+            "Tu es l'assistant IA de MAGsim. Réponds TOUJOURS en français. "
+            "Tu analyses les résultats d'une simulation de laboratoire médical. "
+            "Cite chaque chiffre avec sa référence [Mx] depuis les métriques ci-dessous. "
+            "Ne calcule rien toi-même — utilise uniquement les chiffres présents dans les métriques.\n\n"
+            f"MÉTRIQUES DE LA SIMULATION :\n{metriques}"
+        )
+        messages_directs = [
+            {"role": "system", "content": system_compact},
+            {"role": "user",   "content": QUESTION},
+        ]
+
+        self._ia_afficher("[Compte rendu automatique]\n\n", "system")
+        self._ia_afficher(f"Vous : {QUESTION}\n\n", "user")
+
+        self._ia_en_cours = True
+        self._ia_stop_event = __import__('threading').Event()
+        self._ia_btn_envoyer.config(state="disabled")
+        self._ia_btn_stop.config(state="normal")
+        self._ia_lbl_statut.config(text="⬤  Réflexion…", fg="#f9e2af")
+        self._ia_afficher("🤖  ", "assistant")
+        self._ia_chat.config(state="normal")
+        self._ia_token_start = self._ia_chat.index("end-1c")
+        self._ia_chat.config(state="disabled")
+        self.lbl_fast_status.config(text="✅ Terminé — génération du compte rendu…")
+
+        _stop    = self._ia_stop_event
+        backend  = self._ia_backend
+        model    = self._ia_model
+        conv     = self._ia_conversation
+
+        def _appel():
+            try:
+                def on_token(tok):
+                    self.parent.after(0, self._ia_on_token, tok)
+                if backend == "github":
+                    reponse = envoyer_messages_github(
+                        messages=messages_directs, model=model,
+                        on_token=on_token, stop_event=_stop,
+                    )
+                else:
+                    reponse = envoyer_messages(
+                        messages_directs, model=model,
+                        on_token=on_token, stop_event=_stop,
+                    )
+                # Injecter la réponse dans l'historique de la conv principale
+                conv.ajouter_message_utilisateur(QUESTION)
+                conv.ajouter_message_assistant(reponse)
+                self.parent.after(0, self._ia_finaliser_compte_rendu, reponse)
+            except Exception as e:
+                self.parent.after(0, self._ia_erreur, f"Erreur compte rendu : {e}")
+
+        import threading
+        threading.Thread(target=_appel, daemon=True).start()
+
+    def _ia_finaliser_compte_rendu(self, reponse_brute):
+        """Finalise le compte rendu automatique et met à jour le statut."""
+        self._ia_finaliser(reponse_brute)
+        self.lbl_fast_status.config(text="✅ Terminé — compte rendu généré")
 
     # ------------------------------------------------------------------
     def _ouvrir_assistant(self):

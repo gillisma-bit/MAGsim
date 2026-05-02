@@ -1,0 +1,53 @@
+{
+    "zones": [
+        {
+            "id": "bloc_op",
+            "nom": "Bloc Opératoire",
+            "couleur": "#c0392b",
+            "x1": 30,
+            "y1": 80,
+            "x2": 280,
+            "y2": 310,
+            "stipple": "gray12"
+        },
+        {
+            "id": "chirurgie_greffes",
+            "nom": "Chirurgie Greffes",
+            "couleur": "#8e44ad",
+            "x1": 30,
+            "y1": 320,
+            "x2": 280,
+            "y2": 480,
+            "stipple": "gray12"
+        },
+        {
+            "id": "prelevements",
+            "nom": "Prélèvements & Externes",
+            "couleur": "#27ae60",
+            "x1": 130,
+            "y1": 910,
+            "x2": 460,
+            "y2": 1200,
+            "stipple": "gray12"
+        },
+        {
+            "id": "analyse",
+            "nom": "Laboratoire d'Analyse",
+            "couleur": "#2980b9",
+            "x1": 520,
+            "y1": 80,
+            "x2": 890,
+            "y2": 760,
+            "stipple": "gray12"
+        },
+        {
+            "id": "z5",
+            "nom": "grands brulés",
+            "couleur": "#ff0000",
+            "x1": 1580,
+            "y1": 100,
+            "x2": 2200,
+            "y2": 340
+        }
+    ]
+}

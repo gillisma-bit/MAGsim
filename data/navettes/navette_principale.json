@@ -2,11 +2,22 @@
     "id": "navette_principale",
     "nom": "Navette Principale",
     "type": "coursier",
+
+    "_commentaire": "Service de navette humain (coursier). Plage diurne avec cadence régulière. Nuit = service réduit à 50 %.",
+
     "capacite_max": 20,
-    "mode_depart": "hybride",
-    "frequence_depart_min": 30,
     "priorite_urgents": true,
+
+    "heure_debut_jour": 6.0,
+    "heure_fin_jour": 22.0,
+    "frequence_jour_min": 30,
+    "facteur_nuit": 0.5,
+
+    "imprevu_proba": 0.08,
+    "imprevu_delay_min": 10,
+    "imprevu_delay_max": 50,
+
     "vitesse_m_min": 80,
     "pixels_par_minute": 40,
-    "position_labo_canvas": {"x": 710, "y": 390}
+    "position_labo_canvas": {"x": 590, "y": 272}
 }
