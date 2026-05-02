@@ -2634,6 +2634,29 @@ class TabLive:
                                 tid = tube["id"]
                                 self.canvas.after(500, lambda t=tid: self.canvas.delete(t) if self.canvas.winfo_exists() else None)
                             continue  # tube perdu, non déposé en machine
+                        # ── Rejet prédictif : le tube va-t-il expirer avant la fin de son workflow ? ──
+                        # On calcule ici (avant de consommer l'étape) car etape_tube est encore
+                        # workflow[0], ce qui permet d'inclure la machine courante dans le calcul.
+                        _dv = tube.get("duree_validite", 0)
+                        if _dv > 0:
+                            _validite_restante = _dv - (self.env.now - tube.get("arrivee", self.env.now))
+                            # étapes restantes APRÈS la machine courante
+                            _workflow_apres = tube.get("workflow", [])[1:]
+                            _duree_sim = self._estimer_duree_workflow(
+                                [etape_tube] + list(_workflow_apres), machines)
+                            if _duree_sim > _validite_restante:
+                                tube["perime"] = True
+                                self.tubes_perimes += 1
+                                self.tubes_degrades += 1
+                                if not self.headless and self.canvas.winfo_exists() and tube.get("id"):
+                                    self.canvas.itemconfig(tube["id"],
+                                                          fill="#bdc3c7", outline="#e74c3c", width=2)
+                                    _tid = tube["id"]
+                                    self.canvas.after(
+                                        800,
+                                        lambda _t=_tid: self.canvas.delete(_t)
+                                        if self.canvas.winfo_exists() else None)
+                                continue  # tube condamné, non déposé en machine
                         # Consommer l'étape MAINTENANT que le dépôt est confirmé
                         if tube["workflow"] and tube["workflow"][0] == etape_tube:
                             tube["workflow"].pop(0)
@@ -2794,6 +2817,24 @@ class TabLive:
                 tubes = tubes_reportes
             else:
                 break
+
+    def _estimer_duree_workflow(self, etapes, machines):
+        """Estime la durée totale de traitement en unités SimPy pour une liste d'étapes.
+
+        Chaque étape correspond au nom d'une machine (ex: 'centi1').
+        La durée SimPy = config_temps / 10 (compression ×10 du simulateur).
+        Retourne 0.0 si la liste est vide.
+        """
+        total = 0.0
+        for step in etapes:
+            cfg = machines.get(step, {})
+            protocoles = cfg.get("protocoles", {})
+            if protocoles:
+                etape_key = next(iter(protocoles))
+                total += protocoles[etape_key].get("temps", 60) / 10
+            else:
+                total += 6.0  # défaut 60 min / 10
+        return total
 
     def _liberer_reservations(self, tubes):
         """Libère les slots réservés pour une liste de tubes.
@@ -2957,6 +2998,35 @@ class TabLive:
                     self._debug_entries.append({
                         "ev": "WARN_TEMPS_ZERO", "t": self.env.now, "machine": nom_machine
                     })
+
+            # ── Rejet prédictif en machine : tubes qui ne peuvent plus finir leur workflow ──
+            # Vérifié AVANT le yield pour ne pas occuper la machine inutilement.
+            # À ce stade, workflow du tube = étapes APRÈS la machine courante
+            # (l'étape courante a déjà été consommée au dépôt par le technicien).
+            _mach_cfg_pred = self.config_manager.get_machines()
+            _batch_viables = []
+            for _tube_pred in batch:
+                _dv_pred = _tube_pred.get("duree_validite", 0)
+                if _dv_pred > 0:
+                    _val_rest = _dv_pred - (self.env.now - _tube_pred.get("arrivee", self.env.now))
+                    # temps machine courante (SimPy) + temps étapes restantes
+                    _duree_pred = (temps / 10) + self._estimer_duree_workflow(
+                        _tube_pred.get("workflow", []), _mach_cfg_pred)
+                    if _duree_pred > _val_rest:
+                        _tube_pred["perime"] = True
+                        self.tubes_perimes += 1
+                        self.tubes_degrades += 1
+                        if not self.headless and self.canvas.winfo_exists() and _tube_pred.get("id"):
+                            self.canvas.itemconfig(_tube_pred["id"],
+                                                  fill="#bdc3c7", outline="#e74c3c", width=2)
+                            _tid_pred = _tube_pred["id"]
+                            self.canvas.after(
+                                800,
+                                lambda _t=_tid_pred: self.canvas.delete(_t)
+                                if self.canvas.winfo_exists() else None)
+                        continue
+                _batch_viables.append(_tube_pred)
+            batch = _batch_viables
 
             yield self.env.timeout(temps / 10)
 
