@@ -49,16 +49,24 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
             fm  = m.get("file_max", cap)
             current = len(_mq.get(nom, [])) + _vq.get(nom, 0)
             if current >= fm:
-                return float("inf")   # machine pleine
-            score = cap - current     # fill-first : on remplit la machine la plus proche du seuil
-            # Malus fort si la paillasse a déjà un analyste : préférer une paillasse libre
-            # pour éviter qu'un tech soit bloqué à poste pendant que l'autre reste inoccupée.
-            if m.get("tech_requis_poste", False) and nom in _po:
-                score += 1000
-            return score
+                return (2, 1.0, 0)   # machine pleine → toujours écartée (sentinel > tout score valide)
+            # Stratégie : ratio de remplissage + capacité décroissante
+            #   fill_ratio = current / cap  →  0.0 quand vide, proche 1.0 quand presque pleine
+            #   On trie par (ratio ascendant, capacité descendante) via min() :
+            #     - Préfère la machine la moins remplie proportionnellement
+            #     - À ratio égal (ex: toutes vides), préfère la plus grande capacité
+            #   Exemples avec 15 tubes, ct1 vide cap=4, ct2 vide cap=10 :
+            #     ct1 → (0, 0.0, -4)   ct2 → (0, 0.0, -10)
+            #     min choisit ct2 car -10 < -4  ✓  (10 tubes en un seul batch)
+            #   Puis ct1 vide cap=4, ct2 a 10/10 remplie :
+            #     ct1 → (0, 0.0, -4)   ct2 → sentinel  →  ct1 seule option  ✓
+            fill_ratio = current / cap if cap > 0 else 1.0
+            # Malus paillasse déjà occupée : relégué après les paillasses libres
+            paillasse_malus = 1 if (m.get("tech_requis_poste", False) and nom in _po) else 0
+            return (paillasse_malus, fill_ratio, -cap)
 
         scores = [((nom, m), _score((nom, m))) for nom, m in candidats]
-        scores_valides = [item for item in scores if item[1] != float("inf")]
+        scores_valides = [item for item in scores if item[1][0] < 2]   # exclut les machines pleines
         if not scores_valides:
             return None, None, None   # toutes pleines → reporter le tube
 

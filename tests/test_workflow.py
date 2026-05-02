@@ -31,7 +31,7 @@ MACHINES = {
     },
     "ct2": {
         "type": "Centrifugeuse",
-        "capacite": 4, "file_max": 10,
+        "capacite": 10, "file_max": 10,
         "protocoles": {"centi1": {"temps": 30}},
         "coords": {"x": 675, "y": 675},
     },
@@ -128,17 +128,44 @@ class TestMachinesPlaines:
 
 
 class TestFillFirst:
-    def test_prefere_machine_proche_du_seuil(self):
-        """fill-first : choisit la machine qui a le moins de place restante (plus proche de capacite)."""
+    def test_prefere_machine_haute_capacite_quand_toutes_vides(self):
+        """Throughput-first : à ratio de remplissage égal (toutes vides),
+        choisit la machine à plus haute capacité pour maximiser le batch.
+        MACHINES : ct1 cap=4, ct2 cap=10."""
         tube = make_tube()
-        # ct1 a 3 tubes sur 4 (1 place libre), ct2 a 0 tubes (4 places libres)
-        # fill-first → doit choisir ct1 (score = 4-3 = 1 < 4-0 = 4)
+        _, nom, _ = trouver_prochaine_machine(tube, MACHINES, {})
+        assert nom == "ct2", (
+            f"Throughput-first devrait choisir ct2 (cap=10 > ct1 cap=4) quand les deux sont vides, "
+            f"obtenu '{nom}'"
+        )
+
+    def test_prefere_machine_moins_remplie_proportionnellement(self):
+        """Préfère la machine la moins remplie en proportion, pas en absolu.
+        ct1 à 3/4 (75%) vs ct2 à 0/10 (0%) → doit aller à ct2."""
+        tube = make_tube()
         machine_queues = {
-            "ct1": [{}, {}, {}],  # 3/4 remplie
-            "ct2": [],            # vide
+            "ct1": [{}, {}, {}],  # 3/4 = 75%
+            "ct2": [],            # 0/10 = 0%
         }
         _, nom, _ = trouver_prochaine_machine(tube, MACHINES, machine_queues)
-        assert nom == "ct1", f"fill-first devrait choisir ct1 (presque pleine), obtenu '{nom}'"
+        assert nom == "ct2", (
+            f"ct2 est moins remplie proportionnellement (0% vs 75%), doit être choisie, "
+            f"obtenu '{nom}'"
+        )
+
+    def test_prefere_machine_haute_capacite_si_ratio_egal(self):
+        """Quand les ratios sont égaux, la machine de plus grande capacité gagne (tiebreaker).
+        ct1 2/4 = 50%, ct2 5/10 = 50% → tiebreaker capacité → ct2."""
+        tube = make_tube()
+        machine_queues = {
+            "ct1": [{}, {}],             # 2/4 = 50%
+            "ct2": [{}, {}, {}, {}, {}], # 5/10 = 50%
+        }
+        _, nom, _ = trouver_prochaine_machine(tube, MACHINES, machine_queues)
+        assert nom == "ct2", (
+            f"Ratios égaux (50%) → tiebreaker capacité → ct2 (cap=10) doit gagner, "
+            f"obtenu '{nom}'"
+        )
 
     def test_virtual_queues_bloquent_attribution(self):
         """
