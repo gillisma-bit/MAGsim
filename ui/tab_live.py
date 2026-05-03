@@ -1304,12 +1304,10 @@ class TabLive:
                         return
                     break
 
-                step_x = (dx / dist) * vitesse
-                step_y = (dy / dist) * vitesse
                 pas = min(vitesse, dist)
                 tech.distance_parcourue_px += pas
-                tech.x += step_x
-                tech.y += step_y
+                tech.x += (dx / dist) * pas
+                tech.y += (dy / dist) * pas
 
                 if self.canvas.winfo_exists() and tech.canvas_id:
                     self.canvas.coords(tech.canvas_id,
