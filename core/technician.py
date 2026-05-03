@@ -38,6 +38,12 @@ class TechnicianState:
         self.capacite_max_tubes = 10    # nb max de tubes portables simultanément
         # ── État dynamique ────────────────────────────────────────────────────
         self.fatigue_courante = 0.0     # [0.0 – 1.0] : 0 = reposé, 1 = épuisé
+        # Vitesse de marche de base (px/tick SimPy, 1 tick = 0.05 SimPy = 0.3 s réelles).
+        # Calibrée pour ~5 km/h à l'échelle réelle du labo.
+        # Formule : 5 km/h / 3.6 * 0.3 s * 50 px/case / metres_par_case = 20.83 / mpc
+        # Valeur par défaut = 8.0 correspond à metres_par_case ≈ 2.6 m.
+        # Mise à jour au démarrage via tab_live._init_vitesse_tech(metres_par_case).
+        self.vitesse_base_px = 8.0      # px/tick SimPy
         self.tubes_livres_session = 0   # compteur de tubes livrés cette session
         self.distance_parcourue_px = 0.0        # distance cumulative (pixels, session)
         self._distance_debut_jour_px = 0.0      # snapshot au début du jour courant (calcul journalier)
@@ -129,7 +135,7 @@ class TechnicianState:
 
         f_fatigue = max(0.70, 1.0 - self.fatigue_courante * 0.30)
 
-        return 8.0 * f_age * f_heure * f_fatigue
+        return self.vitesse_base_px * f_age * f_heure * f_fatigue
 
     # ------------------------------------------------------------------
     def etat_bien_etre(self):

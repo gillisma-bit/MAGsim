@@ -476,6 +476,10 @@ class TabLive:
                     tech.taux_montee_fatigue   = float(office.get("taux_montee_fatigue", 0.01))
                     tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                     tech.capacite_max_tubes    = int(office.get("capacite_max_tubes", 10))
+                    # Vitesse calibrée sur l'échelle réelle : 5 km/h équivaut à 20.83/mpc px/tick
+                    # (1 tick = 0.05 SimPy = 0.3 s réelles ; 50 px = 1 case = metres_par_case)
+                    _mpc1 = float(self.config_manager.data.get("personnel", {}).get("metres_par_case", 2.6))
+                    tech.vitesse_base_px = 20.83 / max(0.1, _mpc1)
                     tech.office_x = office["coords"]["x"]
                     tech.office_y = office["coords"]["y"]
                     self.technicians.append(tech)
@@ -740,6 +744,8 @@ class TabLive:
                     tech.taux_montee_fatigue    = float(office.get("taux_montee_fatigue", 0.01))
                     tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                     tech.capacite_max_tubes     = int(office.get("capacite_max_tubes", 10))
+                    _mpc2 = float(self.config_manager.data.get("personnel", {}).get("metres_par_case", 2.6))
+                    tech.vitesse_base_px = 20.83 / max(0.1, _mpc2)
                     tech.office_x = office["coords"]["x"]
                     tech.office_y = office["coords"]["y"]
                     self.technicians.append(tech)
@@ -929,6 +935,8 @@ class TabLive:
                 tech.taux_montee_fatigue   = float(office.get("taux_montee_fatigue", 0.01))
                 tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
                 tech.capacite_max_tubes    = int(office.get("capacite_max_tubes", 10))
+                _mpc3 = float(self.config_manager.data.get("personnel", {}).get("metres_par_case", 2.6))
+                tech.vitesse_base_px = 20.83 / max(0.1, _mpc3)
                 tech.office_x = office["coords"]["x"]
                 tech.office_y = office["coords"]["y"]
                 tech.canvas_id = self.canvas.create_oval(
@@ -2926,19 +2934,29 @@ class TabLive:
     def _estimer_duree_workflow(self, etapes, machines):
         """Estime la durée totale de traitement en unités SimPy pour une liste d'étapes.
 
-        Chaque étape correspond au nom d'une machine (ex: 'centi1').
+        Chaque étape est un NOM DE PROTOCOLE (ex: 'centi1', 'culot 1').
+        Recherche dans l'ordre :
+          1. catalog_protocoles (lookup direct par nom de protocole)
+          2. recherche dans les protocoles de chaque machine
+          3. fallback 60 min si introuvable
         La durée SimPy = config_temps / 10 (compression ×10 du simulateur).
         Retourne 0.0 si la liste est vide.
         """
+        # Construction d'un index {nom_protocole: temps_minutes} depuis le catalog
+        catalog = self.config_manager.data.get("catalog_protocoles", {})
+        # Compléter avec les protocoles déclarés directement dans les machines
+        # (source de vérité si catalog absent ou incomplet)
+        _proto_index = {}
+        for m_cfg in machines.values():
+            for p_nom, p_cfg in m_cfg.get("protocoles", {}).items():
+                if p_nom not in _proto_index:
+                    _proto_index[p_nom] = p_cfg.get("temps", 60)
+        for p_nom, p_cfg in catalog.items():
+            _proto_index.setdefault(p_nom, p_cfg.get("temps", 60))
+
         total = 0.0
         for step in etapes:
-            cfg = machines.get(step, {})
-            protocoles = cfg.get("protocoles", {})
-            if protocoles:
-                etape_key = next(iter(protocoles))
-                total += protocoles[etape_key].get("temps", 60) / 10
-            else:
-                total += 6.0  # défaut 60 min / 10
+            total += _proto_index.get(step, 60) / 10
         return total
 
     def _liberer_reservations(self, tubes):
