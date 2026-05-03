@@ -947,6 +947,11 @@ class TabLive:
                 tech.label_bienetre_id = self.canvas.create_text(
                     tech.x, tech.y - 18, text=emoji_init,
                     font=theme.FONT_BODY, tags="tech_bienetre")
+                # Label tubes portés : "ct1:3; au2:1" affiché à droite du sprite
+                tech.label_tubes_id = self.canvas.create_text(
+                    tech.x + 14, tech.y, text="",
+                    font=theme.FONT_NOTE, fill="#2c3e50",
+                    anchor="w", tags="tech_tubes")
                 self.technicians.append(tech)
             self.canvas.update()
             
@@ -1315,6 +1320,9 @@ class TabLive:
                                       tech.x+10, tech.y+10)
                     if tech.label_bienetre_id:
                         self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
+                    _lbl_t = getattr(tech, 'label_tubes_id', None)
+                    if _lbl_t:
+                        self.canvas.coords(_lbl_t, tech.x + 14, tech.y)
                     for tube in tech.carried_tubes:
                         if tube.get("id"):
                             self.canvas.coords(tube["id"],
@@ -1333,6 +1341,9 @@ class TabLive:
                                   tech.x+10, tech.y+10)
                 if tech.label_bienetre_id:
                     self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
+                _lbl_t = getattr(tech, 'label_tubes_id', None)
+                if _lbl_t:
+                    self.canvas.coords(_lbl_t, tech.x + 14, tech.y)
                 for tube in tech.carried_tubes:
                     if tube.get("id"):
                         self.canvas.coords(tube["id"],
@@ -2519,7 +2530,10 @@ class TabLive:
 
                 # Claim : assigner les tubes AU TECH maintenant, les laisser dans
                 # output_queues pour que les boîtes vertes restent visibles pendant le trajet
+                for t in tubes_finis:
+                    t["_porteur_machine"] = meilleure_machine  # débogage : machine source visible
                 tech.carried_tubes = tubes_finis
+                self._refresh_label_tubes(tech)
 
                 # Se rendre à la machine source
                 m_src = machines.get(meilleure_machine)
@@ -2646,8 +2660,10 @@ class TabLive:
                                           tech.x-6, tech.y-6,
                                           tech.x+6, tech.y+6)
 
+            self._refresh_label_tubes(tech)
             yield self.env.process(self._livrer_tubes(tech, tech.carried_tubes, machines, sorties))
             tech.carried_tubes = []
+            self._refresh_label_tubes(tech)
 
     def _livrer_tubes(self, tech, tubes, machines, sorties):
         """Distribue une liste de tubes vers leurs prochaines destinations en respectant les file_max."""
@@ -2668,6 +2684,7 @@ class TabLive:
                         mu, mv, ma = self.coordinateur.poids_courants
                         _inserer_par_anciennete(self.entry_queue, tube, self.env.now, mu, mv, ma)
                 tech.carried_tubes = []
+                self._refresh_label_tubes(tech)
                 # Retourner au bureau
                 if not self.headless:
                     office_x = getattr(tech, 'office_x', tech.x)
@@ -2730,6 +2747,7 @@ class TabLive:
                     # pour suivre le tech visuellement — retrait APRÈS l'arrivée
                     yield self.env.process(self.deplacer_vers(tech, libre_x, libre_y))
                     tech.carried_tubes = [t for t in tech.carried_tubes if t not in tubes_seuls]
+                    self._refresh_label_tubes(tech)
 
                     if nom_machine not in self.machine_queues:
                         self.machine_queues[nom_machine] = []
@@ -2905,6 +2923,7 @@ class TabLive:
                 # en principe, mais on nettoie par sécurité)
                 self._liberer_reservations(vers_sortie)
                 tech.carried_tubes = [t for t in tech.carried_tubes if id(t) not in _vs_ids]
+                self._refresh_label_tubes(tech)
                 if not self.headless:
                     for tube in vers_sortie:
                         if self.canvas.winfo_exists() and tube.get("id"):
@@ -2995,6 +3014,24 @@ class TabLive:
             clr, w = "#c0392b", 4
         self.canvas.itemconfig(tech.canvas_id, outline=clr, width=w)
         self._update_tech_sprite_bienetre(tech)
+
+    def _refresh_label_tubes(self, tech):
+        """Met à jour le label de débogage 'ct1:3; au2:1' à droite du sprite technicien.
+
+        Regroupe carried_tubes par _porteur_machine (machine source pour les tubes
+        récupérés depuis output_queues) ou 'entr' pour les tubes venant de l'entrée.
+        Vide le label quand le tech ne porte rien.
+        """
+        lbl_id = getattr(tech, 'label_tubes_id', None)
+        if self.headless or not self.canvas.winfo_exists() or not lbl_id:
+            return
+        comptes = {}
+        for t in tech.carried_tubes:
+            src = t.get("_porteur_machine") or "entr"
+            comptes[src] = comptes.get(src, 0) + 1
+        txt = "; ".join(f"{m}:{n}" for m, n in sorted(comptes.items())) if comptes else ""
+        self.canvas.itemconfig(lbl_id, text=txt)
+        self.canvas.coords(lbl_id, tech.x + 14, tech.y)
 
     def _update_tech_sprite_bienetre(self, tech):
         """Met à jour l'emoji et la couleur de remplissage selon le bien-être du technicien."""
