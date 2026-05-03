@@ -1545,6 +1545,16 @@ class TabLive:
                                             "mecontentement": round(tech.mecontentement, 3),
                                         })
                         self._update_tech_sprite_bienetre(tech)
+                        # Enregistrer la valeur de fin de journée sur la CLÉ DU JOUR ÉCOULÉ
+                        # (jour_actuel - 1), pas du jour qui commence.
+                        # Sans ça : "Jour 6 (samedi)" = valeur post-vendredi (peut monter)
+                        # car la mise à jour vendredi se fait à minuit vendredi→samedi.
+                        # Avec ça : "Jour 6 (samedi)" = valeur après la nuit de samedi =
+                        # récupération visible dès que dimanche commence.
+                        _k_be = tech.nom if tech.nom else f"Tech {self.technicians.index(tech) + 1}"
+                        if _k_be not in self.stats_history["bienetre"]:
+                            self.stats_history["bienetre"][_k_be] = {}
+                        self.stats_history["bienetre"][_k_be][jour_actuel - 1] = round(tech.mecontentement, 3)
             for idx, tech in enumerate(self.technicians):
                 k = tech.nom if tech.nom else f"Tech {idx + 1}"
                 if k not in self.stats_history["distances_tech"]:
