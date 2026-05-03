@@ -124,6 +124,7 @@ class TabLive:
         self.transit_times_urgents = deque(maxlen=10_000)  # Idem pour les tubes urgents uniquement
         self.headless = False  # True = simulation accélérée sans animation (mode goulots)
         self.turbo = False  # True = 10 pas SimPy par tick (×10 vitesse)
+        self.paused = False  # True = simulation gelée (bouton ⏸)
         self._sol_cache = None  # Cache du sol grid, initialisé au lancement de la simulation
         self._lab_col_min = 0   # Périmètre labo (calculé depuis sol à l'init du cache)
         self._lab_col_max = 60
@@ -184,6 +185,11 @@ class TabLive:
 
         self.btn_turbo = ttk.Button(self.info_frame, text="⚡ ×10", command=self.toggle_turbo, width=7)
         self.btn_turbo.pack(side=tk.LEFT, padx=5)
+
+        self.btn_pause = ttk.Button(self.info_frame, text="⏸ PAUSE",
+                                    command=self.toggle_pause, width=10)
+        self.btn_pause.pack(side=tk.LEFT, padx=5)
+        self.btn_pause.config(state="disabled")
 
         # ── Toggle IA ──
         self._var_ia = tk.BooleanVar(value=False)
@@ -871,7 +877,9 @@ class TabLive:
         # Réinitialiser uniquement les compteurs UI (pas les dicts partagés
         # avec le thread encore en cours d'arrêt).
         self.turbo = False
+        self.paused = False
         self.btn_turbo.config(text="⚡ ×10")
+        self.btn_pause.config(text="⏸ PAUSE", state="disabled")
         self.btn_start.config(text="▶ LANCER SIMULATION")
         self.btn_reset.config(state="disabled")
         self.lbl_queue.config(text="Tubes en attente : 0")
@@ -887,6 +895,8 @@ class TabLive:
             self.running = True
             self.btn_start.config(text="⏹ ARRÊTER SIMULATION")
             self.btn_reset.config(state="normal")
+            self.paused = False
+            self.btn_pause.config(text="⏸ PAUSE", state="normal")
             
             # Initialiser les queues AVANT de dessiner
             self.entry_queue = []
@@ -1074,21 +1084,29 @@ class TabLive:
                 self.coordinateur.ia_active = False
 
 
+    def toggle_pause(self):
+        """Gèle / reprend la simulation sans la stopper."""
+        self.paused = not self.paused
+        self.btn_pause.config(text="▶ REPRENDRE" if self.paused else "⏸ PAUSE")
+
     def run_sim_loop(self):
         """Boucle qui exécute la simulation par étapes"""
         if self.running and self.env:
             try:
-                steps = 10 if self.turbo else 1
-                for _ in range(steps):
-                    self.env.step()
-                self.mettre_a_jour_compteur()
-                self.update_machine_labels()
+                if not self.paused:
+                    steps = 10 if self.turbo else 1
+                    for _ in range(steps):
+                        self.env.step()
+                    self.mettre_a_jour_compteur()
+                    self.update_machine_labels()
                 self.parent.after(50, self.run_sim_loop)
             except StopIteration:
                 print("[INFO] Simulation terminée")
                 self.running = False
                 self.turbo = False
+                self.paused = False
                 self.btn_turbo.config(text="⚡ ×10")
+                self.btn_pause.config(text="⏸ PAUSE", state="disabled")
                 self.btn_start.config(text="▶ LANCER SIMULATION")
                 self.btn_reset.config(state="disabled")
             except Exception as e:
@@ -1320,9 +1338,7 @@ class TabLive:
                                       tech.x+10, tech.y+10)
                     if tech.label_bienetre_id:
                         self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
-                    _lbl_t = getattr(tech, 'label_tubes_id', None)
-                    if _lbl_t:
-                        self.canvas.coords(_lbl_t, tech.x + 14, tech.y)
+                    self._refresh_label_tubes(tech)
                     for tube in tech.carried_tubes:
                         if tube.get("id"):
                             self.canvas.coords(tube["id"],
@@ -1341,9 +1357,7 @@ class TabLive:
                                   tech.x+10, tech.y+10)
                 if tech.label_bienetre_id:
                     self.canvas.coords(tech.label_bienetre_id, tech.x, tech.y - 18)
-                _lbl_t = getattr(tech, 'label_tubes_id', None)
-                if _lbl_t:
-                    self.canvas.coords(_lbl_t, tech.x + 14, tech.y)
+                self._refresh_label_tubes(tech)
                 for tube in tech.carried_tubes:
                     if tube.get("id"):
                         self.canvas.coords(tube["id"],
@@ -3029,9 +3043,12 @@ class TabLive:
         for t in tech.carried_tubes:
             src = t.get("_porteur_machine") or "entr"
             comptes[src] = comptes.get(src, 0) + 1
-        txt = "; ".join(f"{m}:{n}" for m, n in sorted(comptes.items())) if comptes else ""
+        # Une ligne par machine source, empilées verticalement
+        lignes = [f"{m}:{n}" for m, n in sorted(comptes.items())]
+        txt = "\n".join(lignes) if lignes else ""
         self.canvas.itemconfig(lbl_id, text=txt)
-        self.canvas.coords(lbl_id, tech.x + 14, tech.y)
+        # Ancrer en haut-gauche du sprite pour que les lignes descendent
+        self.canvas.coords(lbl_id, tech.x + 14, tech.y - (len(lignes) - 1) * 6)
 
     def _update_tech_sprite_bienetre(self, tech):
         """Met à jour l'emoji et la couleur de remplissage selon le bien-être du technicien."""
