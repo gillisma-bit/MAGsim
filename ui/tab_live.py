@@ -1516,22 +1516,22 @@ class TabLive:
                             tech_horaire = horaires_cfg.get(tech.nom, {})
                             jours_travail = tech_horaire.get("jours", list(range(5)))
                             est_conge = jour_hier_semaine not in jours_travail
-                            if est_conge:
-                                # Jour de repos : uniquement récupération nocturne,
-                                # pas de calcul de surcharge (ignore les tubes de garde).
+                            if est_conge and tubes_jour == 0:
+                                # Vrai jour de repos : aucun tube traité, pas de rappel en garde.
+                                # Récupération nocturne complète.
                                 tech.mecontentement = max(
                                     0.0,
                                     tech.mecontentement * (1.0 - tech.taux_recuperation_nuit)
                                 )
                                 tech.jours_consecutifs_surcharge = 0
                                 tech.jours_conges_consecutifs += 1
-                                # Bonus à partir du 2e jour de repos consécutif (ex: week-end)
                                 if tech.jours_conges_consecutifs >= 2:
                                     bonus = 0.08 + (tech.jours_conges_consecutifs - 2) * 0.03
                                     tech.mecontentement = max(0.0, tech.mecontentement - bonus)
                                     tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.15)
                             else:
-                                # Jour travaillé : calcul charge vs capacité normale
+                                # Jour travaillé (normal ou rappelé en garde sur jour de congé) :
+                                # la charge réelle (tubes_jour) détermine le mécontentement.
                                 tech.mettre_a_jour_mecontentement(tubes_jour, cap_jour)
                                 tech.jours_conges_consecutifs = 0
                                 # Risque arrêt maladie : tirage aléatoire journalier
@@ -1545,15 +1545,10 @@ class TabLive:
                                             "mecontentement": round(tech.mecontentement, 3),
                                         })
                         self._update_tech_sprite_bienetre(tech)
-                        # Enregistrer la valeur de fin de journée sur la CLÉ DU JOUR ÉCOULÉ
-                        # (jour_actuel - 1), pas du jour qui commence.
-                        # Sans ça : "Jour 6 (samedi)" = valeur post-vendredi (peut monter)
-                        # car la mise à jour vendredi se fait à minuit vendredi→samedi.
-                        # Avec ça : "Jour 6 (samedi)" = valeur après la nuit de samedi =
-                        # récupération visible dès que dimanche commence.
                         _k_be = tech.nom if tech.nom else f"Tech {self.technicians.index(tech) + 1}"
                         if _k_be not in self.stats_history["bienetre"]:
                             self.stats_history["bienetre"][_k_be] = {}
+                        # Écrire la valeur authoritative du jour écoulé (hier = jour_actuel-1).
                         self.stats_history["bienetre"][_k_be][jour_actuel - 1] = round(tech.mecontentement, 3)
             for idx, tech in enumerate(self.technicians):
                 k = tech.nom if tech.nom else f"Tech {idx + 1}"

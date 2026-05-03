@@ -43,7 +43,7 @@ class TechnicianState:
         # Formule : 5 km/h / 3.6 * 0.3 s * 50 px/case / metres_par_case = 20.83 / mpc
         # Valeur par défaut = 8.0 correspond à metres_par_case ≈ 2.6 m.
         # Mise à jour au démarrage via tab_live._init_vitesse_tech(metres_par_case).
-        self.vitesse_base_px = 8.0      # px/tick SimPy
+        self.vitesse_base_px = 8.0      # px/tick SimPy, écrasé au démarrage depuis metres_par_case
         self.tubes_livres_session = 0   # compteur de tubes livrés cette session
         self.distance_parcourue_px = 0.0        # distance cumulative (pixels, session)
         self._distance_debut_jour_px = 0.0      # snapshot au début du jour courant (calcul journalier)
