@@ -1483,9 +1483,7 @@ class TabLive:
                     jour_hier_semaine = (jour_debut_sim + jour_actuel - 1) % 7
                     for tech in self.technicians:
                         tech._distance_debut_jour_px = tech.distance_parcourue_px
-                        # Mécontentement : comparaison tubes livrés hier vs capacité normale
                         tubes_jour = tech.tubes_livres_session - tech._tubes_livres_debut_jour
-                        tech.mettre_a_jour_mecontentement(tubes_jour, cap_jour)
                         tech._tubes_livres_debut_jour = tech.tubes_livres_session
                         # Récupération nocturne de la fatigue physique
                         tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.40)
@@ -1506,11 +1504,20 @@ class TabLive:
                                 })
                             tech.jours_conges_consecutifs = 0  # congé maladie ≠ repos planifié
                         else:
-                            # Vérifier si hier était un jour de repos planifié
+                            # Déterminer si hier était un jour de repos AVANT le calcul de
+                            # mécontentement : les tubes livrés en garde sur un jour de repos
+                            # ne doivent pas être comptés en surcharge (cap_jour = journée pleine).
                             tech_horaire = horaires_cfg.get(tech.nom, {})
-                            jours_travail = tech_horaire.get("jours", list(range(7)))
+                            jours_travail = tech_horaire.get("jours", list(range(5)))
                             est_conge = jour_hier_semaine not in jours_travail
                             if est_conge:
+                                # Jour de repos : uniquement récupération nocturne,
+                                # pas de calcul de surcharge (ignore les tubes de garde).
+                                tech.mecontentement = max(
+                                    0.0,
+                                    tech.mecontentement * (1.0 - tech.taux_recuperation_nuit)
+                                )
+                                tech.jours_consecutifs_surcharge = 0
                                 tech.jours_conges_consecutifs += 1
                                 # Bonus à partir du 2e jour de repos consécutif (ex: week-end)
                                 if tech.jours_conges_consecutifs >= 2:
@@ -1518,6 +1525,8 @@ class TabLive:
                                     tech.mecontentement = max(0.0, tech.mecontentement - bonus)
                                     tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.15)
                             else:
+                                # Jour travaillé : calcul charge vs capacité normale
+                                tech.mettre_a_jour_mecontentement(tubes_jour, cap_jour)
                                 tech.jours_conges_consecutifs = 0
                                 # Risque arrêt maladie : tirage aléatoire journalier
                                 # (désactivé en mode test « sans arrêts maladie »)
@@ -2404,9 +2413,12 @@ class TabLive:
             if getattr(tech, '_garde_actif', False) and not en_service_horaire:
                 personnel_g = self.config_manager.data.get("personnel", {})
                 forfait_min = float(personnel_g.get("garde_forfait_heures", 3)) * 60
+                # Plafond absolu = 2× le forfait pour éviter qu'une garde dure tout le week-end
+                # quand des tubes restent urgents (ex: escalade automatique la nuit).
+                garde_max = forfait_min * 2
                 temps_sur_place = self.env.now - getattr(tech, '_garde_arrivee', self.env.now)
                 has_urgent = any(t.get("urgent") for t in self.entry_queue)
-                if temps_sur_place >= forfait_min and not has_urgent:
+                if temps_sur_place >= forfait_min and (not has_urgent or temps_sur_place >= garde_max):
                     tech._garde_actif = False
                     en_service = False
                     tech.en_service = False
