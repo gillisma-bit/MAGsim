@@ -49,21 +49,27 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
             fm  = m.get("file_max", cap)
             current = len(_mq.get(nom, [])) + _vq.get(nom, 0)
             if current >= fm:
-                return (2, 1.0, 0)   # machine pleine → toujours écartée (sentinel > tout score valide)
-            # Stratégie : ratio de remplissage + capacité décroissante
-            #   fill_ratio = current / cap  →  0.0 quand vide, proche 1.0 quand presque pleine
-            #   On trie par (ratio ascendant, capacité descendante) via min() :
-            #     - Préfère la machine la moins remplie proportionnellement
-            #     - À ratio égal (ex: toutes vides), préfère la plus grande capacité
-            #   Exemples avec 15 tubes, ct1 vide cap=4, ct2 vide cap=10 :
-            #     ct1 → (0, 0.0, -4)   ct2 → (0, 0.0, -10)
-            #     min choisit ct2 car -10 < -4  ✓  (10 tubes en un seul batch)
-            #   Puis ct1 vide cap=4, ct2 a 10/10 remplie :
-            #     ct1 → (0, 0.0, -4)   ct2 → sentinel  →  ct1 seule option  ✓
-            fill_ratio = current / cap if cap > 0 else 1.0
-            # Malus paillasse déjà occupée : relégué après les paillasses libres
+                return (2, 9999, 0)   # machine pleine → toujours écartée (sentinel > tout score valide)
+            # Stratégie batch-first : slots restants avant déclenchement du cycle
+            #   remaining = cap - current  →  0 quand le seuil est atteint, cap quand vide
+            #   On trie par (remaining ascendant, cap ascendant) via min() :
+            #     - Préfère la machine la plus proche de déclencher son cycle
+            #     - À égalité, préfère la machine de plus petite capacité (déclenche avec
+            #       moins de tubes → cycle rapide plutôt que grosse centri à moitié vide)
+            #   Exemple : ct1 vide cap=4, ct2 vide cap=10, 4 tubes disponibles
+            #     tube 1 : ct1 (0, 4, 4)  ct2 (0, 10, 10)  → ct1 gagne (4 < 10)  ✓
+            #     tube 2 : ct1 (0, 3, 4)  ct2 (0, 10, 10)  → ct1 gagne             ✓
+            #     tube 3 : ct1 (0, 2, 4)  → ct1 gagne                               ✓
+            #     tube 4 : ct1 (0, 1, 4)  → ct1 gagne → cycle déclenché !           ✓
+            #   Exemple : ct1 à 3/4 (remaining=1), ct2 vide (remaining=10)
+            #     → ct1 gagne → on complète d'abord le cycle en cours               ✓
+            remaining = max(0, cap - current)
+            # Malus si la machine est déjà au seuil de déclenchement (current >= cap) :
+            # un tube supplémentaire n'apporterait rien (le cycle est déjà déclenché ou
+            # le batch est complet) → reléguer après les machines encore «ouvertes».
+            at_cap_malus = 1 if current >= cap else 0
             paillasse_malus = 1 if (m.get("tech_requis_poste", False) and nom in _po) else 0
-            return (paillasse_malus, fill_ratio, -cap)
+            return (paillasse_malus, at_cap_malus, remaining, cap)
 
         scores = [((nom, m), _score((nom, m))) for nom, m in candidats]
         scores_valides = [item for item in scores if item[1][0] < 2]   # exclut les machines pleines
