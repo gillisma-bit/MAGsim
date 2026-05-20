@@ -7,8 +7,158 @@ class ConfigManager:
         self.filepath = filepath
         self.data = self.charger_config()
 
+    # ------------------------------------------------------------------ #
+    #  Normalisation des protocoles                                       #
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _normaliser_protocoles(machines: dict, catalog: dict) -> None:
+        """Corrige en-place les formats incorrects de 'protocoles' dans chaque
+        machine.  Formats tolérés (produits par l'IA) :
+          - list  → converti en dict vide  (les noms sont perdus, pas de temps)
+          - dict  dont les valeurs sont int/float → converti en {"temps": val}
+          - dict  dont les valeurs sont str → supprimé (valeur sans sens)
+          - dict  dont les valeurs sont dict → inchangé (format attendu)
+        Le catalogue 'catalog_protocoles' est utilisé pour compléter les
+        informations manquantes (temps, type_compatible).
+        """
+        for machine in machines.values():
+            if not isinstance(machine, dict):
+                continue
+            raw = machine.get("protocoles")
+            # Cas 1 : liste → dict vide
+            if isinstance(raw, list):
+                machine["protocoles"] = {}
+                continue
+            # Cas 2 : pas un dict du tout
+            if not isinstance(raw, dict):
+                machine["protocoles"] = {}
+                continue
+            # Cas 3 : dict avec valeurs non-dict
+            normalized = {}
+            for nom, val in raw.items():
+                if isinstance(val, dict):
+                    normalized[nom] = val          # format correct
+                elif isinstance(val, (int, float)):
+                    # L'IA a mis le temps directement comme entier
+                    entry = {"temps": int(val)}
+                    if nom in catalog:
+                        entry.setdefault("type_compatible",
+                                         catalog[nom].get("type_compatible", ""))
+                    normalized[nom] = entry
+                else:
+                    # str ou autre : on tente de récupérer depuis le catalogue
+                    if nom in catalog:
+                        normalized[nom] = dict(catalog[nom])
+                    # sinon on ignore silencieusement
+            machine["protocoles"] = normalized
+
+    # ------------------------------------------------------------------ #
+    #  Réparation des employés / horaires                                 #
+    # ------------------------------------------------------------------ #
+    # Valeurs par défaut d'un TECH_OFFICE créé via l'UI (dialog_rh.py)
+    _TECH_DEFAULTS = {
+        "type": "TECH_OFFICE",
+        "capacite": 4, "file_max": 4, "seuil": 1,
+        "protocoles": {},
+        "experience": 3, "age": 35,
+        "pct_erreur_tech": 0.01,
+        "seuil_charge_fatigue": 0.70,
+        "taux_montee_fatigue": 0.01,
+        "taux_recuperation_nuit": 0.15,
+        "capacite_max_tubes": 10,
+    }
+    _HORAIRE_DEFAULTS = {
+        "jours": list(range(5)),
+        "heure_debut": 8.0, "heure_fin": 16.0,
+        "pause_debut": 12.0, "pause_fin": 13.0,
+        "pool_garde": False, "actif": True,
+    }
+
+    @staticmethod
+    def _coords_tech_libres(machines: dict, index: int) -> dict:
+        """Calcule des coords non-occupées pour un nouveau TECH_OFFICE."""
+        i = index % 10
+        return {"x": 125 + i * 50, "y": 875}
+
+    @classmethod
+    def _reparer_employes(cls, data: dict) -> bool:
+        """Répare en-place les artefacts IA liés aux employés.
+
+        Stratégie — plutôt que de supprimer, le système **complète** :
+
+        1. Entrée machines sans 'type'/'coords' mais avec des champs
+           reconnaissables (nom, experience, age…) → complétée comme
+           TECH_OFFICE avec les valeurs par défaut manquantes.
+           Sans aucun champ reconnaissable → supprimée (garbage pur).
+
+        2. Horaire orphelin (le nom ne correspond à aucun technicien) →
+           une fiche TECH_OFFICE minimale est créée dans 'machines' pour
+           que le planning reste actif.
+
+        Retourne True si des réparations ont été effectuées (le fichier
+        devra être re-sauvegardé).
+        """
+        machines = data.get("machines", {})
+        horaires = data.get("horaires", {})
+        repare   = False
+
+        # ── 1. Compléter les fiches machines incomplètes ──────────────
+        _champs_tech = {"nom", "experience", "age", "pct_erreur_tech",
+                        "seuil_charge_fatigue", "taux_montee_fatigue",
+                        "capacite_max_tubes", "taux_recuperation_nuit"}
+        cles_invalides = [
+            k for k, v in machines.items()
+            if isinstance(v, dict)
+            and ("type" not in v or "coords" not in v)
+        ]
+        for idx, k in enumerate(cles_invalides):
+            v = machines[k]
+            if not isinstance(v, dict) or not (_champs_tech & set(v.keys())):
+                # Aucun champ reconnaissable → suppression
+                print(f"[config] Entrée machines non récupérable supprimée : « {k} »")
+                del machines[k]
+            else:
+                # Compléter avec les défauts TECH_OFFICE
+                for champ, val in cls._TECH_DEFAULTS.items():
+                    v.setdefault(champ, val)
+                if "coords" not in v:
+                    v["coords"] = cls._coords_tech_libres(machines, idx)
+                nom_tech = v.get("nom", k)
+                # Créer un horaire si absent
+                if nom_tech not in horaires:
+                    horaires[nom_tech] = dict(cls._HORAIRE_DEFAULTS)
+                    print(f"[config] Horaire créé pour « {nom_tech} » (fiche complétée automatiquement)")
+                print(f"[config] Fiche TECH_OFFICE complétée : « {k} » → nom={nom_tech!r}")
+                repare = True
+
+        # ── 2. Horaires orphelins → créer la fiche machine ────────────
+        noms_techs = {
+            v.get("nom", k)
+            for k, v in machines.items()
+            if isinstance(v, dict) and v.get("type") == "TECH_OFFICE"
+        }
+        for nom in list(horaires):
+            if nom in noms_techs:
+                continue
+            # Générer une clé unique
+            i = 1
+            while f"tech_{i}" in machines:
+                i += 1
+            key = f"tech_{i}"
+            fiche = dict(cls._TECH_DEFAULTS)
+            fiche["nom"]    = nom
+            fiche["coords"] = cls._coords_tech_libres(machines, i)
+            machines[key]   = fiche
+            noms_techs.add(nom)
+            print(f"[config] Fiche TECH_OFFICE créée pour horaire orphelin : "
+                  f"« {nom} » → clé={key!r}")
+            repare = True
+
+        return repare
+
     def charger_config(self):
-        """Charge le JSON et initialise les sections manquantes."""
+        """Charge le JSON, initialise les sections manquantes et normalise les
+        protocoles pour tolérer les formats incorrects générés par l'IA."""
         if os.path.exists(self.filepath):
             try:
                 with open(self.filepath, 'r', encoding='utf-8') as f:
@@ -18,6 +168,24 @@ class ConfigManager:
                     if "sol" not in data: data["sol"] = {}
                     if "catalog_protocoles" not in data: data["catalog_protocoles"] = {}
                     if "types_tubes" not in data: data["types_tubes"] = {}
+                    if "horaires" not in data: data["horaires"] = {}
+                    # Normalise les protocoles mal formés (erreurs IA fréquentes)
+                    self._normaliser_protocoles(
+                        data["machines"], data["catalog_protocoles"])
+                    # Répare les fiches incomplètes et les horaires orphelins
+                    # (erreurs IA lors de modifications d'employés)
+                    repare = self._reparer_employes(data)
+                    if repare:
+                        # Re-sauvegarder pour que le JSON reflète les réparations
+                        try:
+                            import os as _os
+                            _os.makedirs(_os.path.dirname(self.filepath), exist_ok=True)
+                            import json as _json
+                            with open(self.filepath, 'w', encoding='utf-8') as fw:
+                                _json.dump(data, fw, indent=4, ensure_ascii=False)
+                            print("[config] Fichier re-sauvegardé après réparations.")
+                        except Exception as e:
+                            print(f"[config] Impossible de re-sauvegarder : {e}")
                     return data
             except:
                 print("Erreur de lecture JSON. Création d'une config neuve.")
@@ -54,7 +222,25 @@ class ConfigManager:
             self.sauvegarder()
 
     def get_machines(self):
-        return self.data.get("machines", {})
+        """Retourne les machines valides pour la simulation.
+        Exclut les machines avec en_attente_placement=true (ajoutées par l'IA, pas encore placées)."""
+        result = {}
+        for k, v in self.data.get("machines", {}).items():
+            if not isinstance(v, dict) or "type" not in v or "coords" not in v:
+                continue
+            if v.get("en_attente_placement"):
+                continue  # visible dans la zone de dépôt du plan, pas encore dans le labo
+            result[k] = v
+        return result
+
+    def get_machines_avec_pending(self):
+        """Retourne TOUTES les machines y compris celles en attente de placement (pour tab_config)."""
+        result = {}
+        for k, v in self.data.get("machines", {}).items():
+            if not isinstance(v, dict) or "type" not in v or "coords" not in v:
+                continue
+            result[k] = v
+        return result
 
     # --- GESTION DU CATALOGUE DE PROTOCOLES (NOUVEAU) ---
     def ajouter_protocole_global(self, nom, temps, type_compatible):

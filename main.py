@@ -72,7 +72,9 @@ class MAGsimApp:
 
     def _on_tab_changed(self, event):
         tab = self.notebook.index(self.notebook.select())
-        if tab == 4:   # onglet Diagnostic (index décalé par l'ajout de Réseau en 1ère pos.)
+        if tab == 1:   # onglet Configuration
+            self.tab_config._dessiner_zone_staging()
+        elif tab == 4:   # onglet Diagnostic (index décalé par l'ajout de Réseau en 1ère pos.)
             self.tab_diagnostic.lancer_diagnostic()
         elif tab == 5:  # onglet Assistant IA
             if self.tab_assistant._conversation is not None:

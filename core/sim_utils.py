@@ -68,7 +68,15 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
             # un tube supplémentaire n'apporterait rien (le cycle est déjà déclenché ou
             # le batch est complet) → reléguer après les machines encore «ouvertes».
             at_cap_malus = 1 if current >= cap else 0
-            paillasse_malus = 1 if (m.get("tech_requis_poste", False) and nom in _po) else 0
+            # Malus Paillasse :
+            #   1 = occupée mais encore de la place (on peut déposer, tech déjà là)
+            #   2 = occupée ET queue >= seuil (prochain batch déjà alimenté → inutile d'y envoyer
+            #       davantage, les autres machines passent avant)
+            _seuil_m = m.get("seuil", 1)
+            if m.get("tech_requis_poste", False) and nom in _po:
+                paillasse_malus = 2 if current >= _seuil_m else 1
+            else:
+                paillasse_malus = 0
             return (paillasse_malus, at_cap_malus, remaining, cap)
 
         scores = [((nom, m), _score((nom, m))) for nom, m in candidats]

@@ -63,6 +63,109 @@ Quand tu proposes un changement, inclus EXACTEMENT ce bloc :
 ]
 ```
 
+Pour CRÉER un technicien de zéro, utilise un objet complet en valeur (une seule opération crée toute la fiche) :
+
+```config_patch
+[
+  {"chemin": "machines.CLE_NOUVELLE", "valeur": {
+      "type": "TECH_OFFICE",
+      "coords": {"x": 975.0, "y": 875.0},
+      "capacite": 4,
+      "protocoles": {},
+      "pct_erreur_tech": 0.02,
+      "experience": 3,
+      "age": 30,
+      "seuil_charge_fatigue": 0.70,
+      "taux_montee_fatigue": 0.001,
+      "capacite_max_tubes": 10,
+      "nom": "PRENOM",
+      "taux_recuperation_nuit": 0.15
+  }},
+  {"chemin": "horaires.PRENOM", "valeur": {
+      "jours": [0,1,2,3,4],
+      "heure_debut": 8.0,
+      "heure_fin": 16.0,
+      "actif": true
+  }}
+]
+```
+Pour CLE_NOUVELLE : regarde les clés techniques existantes dans la section "Clés techniques" et utilise la suivante (ex: si b1 et b2 existent, utilise b3).
+
+== RECRUTER UN NOUVEAU TECHNICIEN ==
+Si le gestionnaire parle de recruter, embaucher, ajouter un technicien ou une nouvelle personne, APPLIQUE ce protocole de questions simples, UNE À LA FOIS :
+
+ÉTAPE 1 — Prénom : "Comment s'appellera ce nouveau technicien ?"
+ÉTAPE 2 — Jours de travail : Propose directement selon ce qui a été dit. Exemples :
+  - "Semaine complète" → propose [0,1,2,3,4] (lundi–vendredi), demande confirmation : "Je pars sur du lundi au vendredi — c'est ça ?"
+  - "Week-end" → propose [5,6] (samedi–dimanche)
+  - "Mi-temps" → demande quels jours
+ÉTAPE 3 — Horaires : Propose le standard selon les infos données :
+  - Si journée classique → "Je propose un horaire de 8h à 16h — c'est son créneau habituel ?"
+  - Si soir → "Un créneau de 16h à minuit vous semble correct ?"
+  - Si nuit → "De 0h à 8h ?"
+ÉTAPE 4 — Expérience : "Quel est son niveau ? (1=stagiaire/débutant, 2=junior <2 ans, 3=confirmé, 4=senior >5 ans, 5=expert)" — propose 3 (confirmé) comme valeur par défaut si pas d'info.
+ÉTAPE 5 — Récapitulatif + proposition de patch : résume en langage simple tout ce que tu vas créer, puis génère le bloc config_patch complet.
+
+RÈGLES pour le recrutement :
+- Ne demande PAS l'âge (utilise 30 comme valeur par défaut)
+- Ne parle PAS de "seuil de fatigue", "taux de récupération" — utilise les valeurs standards
+- Si le gestionnaire donne plusieurs infos d'un coup ("il travaille L-V de 8h à 17h"), saute les étapes déjà répondues
+- Toujours récapituler AVANT de générer le patch : "Voilà ce que je vais créer : [nom], [jours en français], [heures]. C'est bon pour vous ?"
+- Adapter pct_erreur_tech selon l'expérience : niveau 1→0.08, 2→0.05, 3→0.02, 4→0.01, 5→0.005
+
+== AJOUTER UN APPAREIL ==
+Si le gestionnaire parle d'ajouter, acheter, installer un appareil, un équipement ou une machine, APPLIQUE ce protocole, UNE QUESTION À LA FOIS :
+
+ÉTAPE 1 — Type : propose la liste et demande lequel. Types disponibles :
+  Centrifugeuse, Automate, Paillasse, Incubateur, Réfrigérateur, Laveur de plaque, Lecteur de plaque, Bain-marie, Agitateur, Microscope, Hotte, Congélateur
+ÉTAPE 2 — Nom : "Comment appellera-t-on cet appareil ?" (ex: "Centri 2", "Automate Beckman")
+ÉTAPE 3 — Capacité : "Combien d'échantillons peut-il traiter en même temps ?" — propose une valeur standard selon le type :
+  Centrifugeuse→4, Automate→10, Paillasse→5, Incubateur→6, Réfrigérateur→50, Laveur→8, Lecteur→1, Bain-marie→12, Agitateur→6, Microscope→1, Hotte→3, Congélateur→100
+ÉTAPE 4 — Technicien requis : uniquement pour Paillasse et Microscope. "Un technicien doit-il être présent pour utiliser cet appareil ?" (oui/non)
+ÉTAPE 5 — Récapitulatif + patch : résume et génère le bloc config_patch.
+
+RÈGLES pour l'ajout d'appareil :
+- Une fois créé, l'appareil sera visible dans la zone de dépôt (coin supérieur droit du plan) : l'utilisateur n'a plus qu'à le faire glisser à sa place dans le labo
+- TOUJOURS inclure "en_attente_placement": true dans le patch — c'est ce qui le fait apparaître dans la zone de dépôt
+- TOUJOURS mettre coords à {"x": 2750, "y": 125} — position fixe de la zone de dépôt
+- Ne jamais demander l'emplacement dans le labo (c'est le gestionnaire qui le glisse à la main)
+- Ne pas demander les protocoles maintenant : ça se configure ensuite dans l'onglet Configuration
+- Utiliser les valeurs standard ci-dessous pour les champs techniques (ne pas les mentionner à l'utilisateur) :
+  Centrifugeuse : tmep=200, tmr=0.5, delai_max=240, file_max=10, larg=1, haut=1, prefixe_cle="ct"
+  Automate      : tmep=6000, tmr=60, delai_max=360, file_max=20, larg=2, haut=1, prefixe_cle="au"
+  Paillasse     : tmep=12, tmr=0.33, delai_max=300, file_max=25, larg=2, haut=1, prefixe_cle="pa"
+  Incubateur    : tmep=180, tmr=1, delai_max=480, file_max=6, larg=1, haut=1, prefixe_cle="ic"
+  Réfrigérateur : tmep=0, tmr=0, delai_max=9999, file_max=50, larg=1, haut=2, prefixe_cle="rf"
+  Laveur de plaque: tmep=60, tmr=2, delai_max=300, file_max=8, larg=2, haut=1, prefixe_cle="lv"
+  Lecteur de plaque: tmep=10, tmr=0.5, delai_max=180, file_max=1, larg=1, haut=1, prefixe_cle="lc"
+  Bain-marie    : tmep=120, tmr=1, delai_max=480, file_max=12, larg=1, haut=1, prefixe_cle="bm"
+  Agitateur     : tmep=30, tmr=0.5, delai_max=240, file_max=6, larg=1, haut=1, prefixe_cle="ag"
+  Microscope    : tmep=5, tmr=0.1, delai_max=120, file_max=1, larg=1, haut=1, prefixe_cle="ms"
+  Hotte         : tmep=0, tmr=0, delai_max=9999, file_max=3, larg=3, haut=1, prefixe_cle="ht"
+  Congélateur   : tmep=0, tmr=0, delai_max=9999, file_max=100, larg=1, haut=2, prefixe_cle="cg"
+- Pour la CLE_NOUVELLE : utilise le préfixe du type + prochain numéro (ex: si ct1 existe → ct2). Regarde la section "Clés techniques".
+
+Exemple de patch pour une Centrifugeuse nommée "Centri 2" avec capacité 6 :
+```config_patch
+[
+  {"chemin": "machines.ct2", "valeur": {
+      "type": "Centrifugeuse",
+      "coords": {"x": 2750, "y": 125},
+      "capacite": 6,
+      "protocoles": {},
+      "seuil": 1,
+      "file_max": 10,
+      "tmep": 200.0,
+      "tmr": 0.5,
+      "delai_max_avant_degrad": 240,
+      "tech_requis_poste": false,
+      "largeur_cases": 1,
+      "hauteur_cases": 1,
+      "en_attente_placement": true
+  }}
+]
+```
+
 == Règles de conduite ==
 - Réponds TOUJOURS en français, c'est obligatoire
 - Ton décontracté et légèrement humoristique si l'occasion s'y prête, mais les chiffres et analyses restent TOUJOURS précis et complets
@@ -112,7 +215,7 @@ def _construire_mapping_ids(machines):
         if m.get("type") == "TECH_OFFICE":
             nom = m.get("nom") or cle
             lignes.append(f"  • Technicien '{nom}' → clé : machines.{cle}")
-        elif m.get("type") in ("Centrifugeuse", "Automate", "Paillasse"):
+        elif m.get("type") not in ("ENTREE", "SORTIE", "TECH_OFFICE", "REPOS", None):
             lignes.append(f"  • Équipement '{cle}' ({m.get('type')}) → clé : machines.{cle}")
     return "\n".join(lignes)
 
@@ -614,15 +717,22 @@ def construire_contexte(config, stats_history=None):
         lignes.append("  ✓ Couverture assurée tous les jours de la semaine")
 
     # ── Équipements ──
-    types_eq = ("Centrifugeuse", "Automate", "Paillasse")
-    machines_actives = [(n, m) for n, m in machines.items() if m.get("type") in types_eq]
+    _TYPES_SPECIAUX = {"ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"}
+    machines_actives = [(n, m) for n, m in machines.items()
+                        if m.get("type") not in _TYPES_SPECIAUX and m.get("type")]
     lignes.append(f"\nÉQUIPEMENTS ({len(machines_actives)}) :")
     for nom_m, m in machines_actives:
         cap   = m.get("capacite", 4)
         tmep  = m.get("tmep", 0)
         tmr   = m.get("tmr", 0)
         dispo = f"{tmep/(tmep+tmr)*100:.0f}%" if (tmep and tmr) else "non configuré"
-        proto = ", ".join(m.get("protocoles", {}).keys()) or "aucun"
+        proto_raw = m.get("protocoles", {})
+        if isinstance(proto_raw, dict):
+            proto = ", ".join(proto_raw.keys()) or "aucun"
+        elif isinstance(proto_raw, list):
+            proto = ", ".join(str(p) for p in proto_raw) or "aucun"
+        else:
+            proto = "aucun"
         lignes.append(f"  • {nom_m} ({m.get('type')}) — capacité {cap} — protocoles : {proto} — disponibilité : {dispo}")
 
     # ── Résumé simulation ──
@@ -802,8 +912,9 @@ def construire_contexte(config, stats_history=None):
             lignes.append(ligne)
 
     # Équipements — paramètres complets avec protocoles et durées
-    types_eq = ("Centrifugeuse", "Automate", "Paillasse")
-    equips = [(k, m) for k, m in machines.items() if m.get("type") in types_eq]
+    _TYPES_SPECIAUX_CFG = {"ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"}
+    equips = [(k, m) for k, m in machines.items()
+              if m.get("type") not in _TYPES_SPECIAUX_CFG and m.get("type")]
     if equips:
         lignes.append("\nPARAMÈTRES MACHINES ET PROTOCOLES :")
         for nom_k, m in equips:
@@ -816,6 +927,8 @@ def construire_contexte(config, stats_history=None):
             degrad   = m.get("delai_max_avant_degrad", "?")
             requis   = m.get("tech_requis_poste", False)
             protos   = m.get("protocoles", {})
+            if not isinstance(protos, dict):
+                protos = {}
             proto_txt = ", ".join(
                 f"{pn} ({pv.get('temps','?')} min)" for pn, pv in protos.items()
             ) if protos else "aucun"
@@ -975,6 +1088,45 @@ def set_cle_github(cle):
     sauver_config_api(cfg)
 
 
+_STYLE_DEFAUT = {
+    "reponses_courtes":    False,   # Réponses brèves et directes
+    "questions_proactives": True,   # Poser une question en fin de réponse
+}
+
+def get_style_ia():
+    """Retourne les préférences de style de l'IA (dict)."""
+    sauvegarde = lire_config_api().get("style_ia", {})
+    style = dict(_STYLE_DEFAUT)
+    style.update(sauvegarde)
+    return style
+
+def set_style_ia(style):
+    """Sauvegarde les préférences de style dans data/config_api.json."""
+    cfg = lire_config_api()
+    cfg["style_ia"] = {k: bool(v) for k, v in style.items()}
+    sauver_config_api(cfg)
+
+def _construire_regles_style():
+    """Génère les règles de style à injecter dans le prompt système."""
+    style = get_style_ia()
+    regles = []
+    if style.get("reponses_courtes"):
+        regles.append(
+            "STYLE — CONCISION : Tes réponses doivent être COURTES et DIRECTES. "
+            "Va droit au but : état + chiffre clé + action. "
+            "Maximum 3-4 phrases sauf si on te demande un détail. "
+            "Pas d'introduction, pas de conclusion, pas de formule de politesse."
+        )
+    if not style.get("questions_proactives", True):
+        regles.append(
+            "STYLE — QUESTIONS : Ne pose JAMAIS de question en fin de réponse, "
+            "sauf si l'utilisateur te le demande explicitement ou si une information "
+            "absolument indispensable manque pour effectuer l'action demandée. "
+            "Si tu as toutes les infos, agis directement sans demander confirmation."
+        )
+    return "\n".join(regles)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 #  Client GitHub Models  (format OpenAI — inclus dans GitHub Copilot)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -993,6 +1145,7 @@ GITHUB_MODELES = [
     "meta/llama-3.3-70b-instruct",      # high tier — 50 req/j, 128k ctx
     "meta/llama-4-scout-17b-16e-instruct",  # high tier — 50 req/j, 10M ctx
     "deepseek/deepseek-v3-0324",        # high tier — 50 req/j, 128k ctx
+    "mistral-ai/mistral-medium-2505",   # high tier — 50 req/j, 128k ctx  ← plus gros Mistral dispo
     "mistral-ai/mistral-small-2503",    # low tier  — 150 req/j, 128k ctx
     "microsoft/phi-4",                  # low tier  — 150 req/j, 16k ctx
 ]
@@ -1004,8 +1157,10 @@ def github_models_disponible():
 
 
 def envoyer_messages_github(messages, model="openai/gpt-4.1-mini",
-                             on_token=None, timeout=120, stop_event=None):
+                             on_token=None, timeout=120, stop_event=None,
+                             _max_retries=3):
     """Envoie une conversation à GitHub Models (format OpenAI compatible).
+    Réessaie automatiquement jusqu'à _max_retries fois sur erreurs 5xx / 429.
 
     Le message système est INCLUS dans la liste messages avec role="system",
     exactement comme pour Ollama — aucun changement de structure nécessaire.
@@ -1032,65 +1187,86 @@ def envoyer_messages_github(messages, model="openai/gpt-4.1-mini",
         "temperature": 0,
     }
     body = json.dumps(payload).encode("utf-8")
-    req  = urllib.request.Request(
-        GITHUB_MODELS_URL,
-        data=body,
-        headers={
-            "Content-Type":  "application/json",
-            "Authorization": f"Bearer {cle}",
-        },
-        method="POST",
-    )
 
     reponse_complete = []
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            if on_token:
-                # Streaming SSE — format identique à OpenAI
-                for ligne in resp:
-                    if stop_event and stop_event.is_set():
-                        break
-                    ligne_str = ligne.decode("utf-8").strip()
-                    if not ligne_str.startswith("data:"):
-                        continue
-                    data_str = ligne_str[len("data:"):].strip()
-                    if data_str == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data_str)
-                    except json.JSONDecodeError:
-                        continue
-                    choices = chunk.get("choices")
-                    if not choices:
-                        continue
-                    token = (
-                        choices[0]
-                        .get("delta", {})
-                        .get("content", "")
-                    )
-                    if token:
-                        reponse_complete.append(token)
-                        on_token(token)
-            else:
-                data = json.loads(resp.read().decode("utf-8"))
-                choices = data.get("choices")
-                if not choices:
-                    raise ValueError(
-                        f"Réponse inattendue de GitHub Models : {json.dumps(data)[:300]}"
-                    )
-                return choices[0]["message"]["content"]
-    except urllib.error.HTTPError as e:
-        corps = e.read().decode("utf-8", errors="replace")
+    _derniere_erreur = None
+    for _tentative in range(max(1, _max_retries)):
+        # Reconstruire la requête à chaque tentative (le body est consommé par urlopen)
+        _req = urllib.request.Request(
+            GITHUB_MODELS_URL,
+            data=body,
+            headers={
+                "Content-Type":  "application/json",
+                "Authorization": f"Bearer {cle}",
+            },
+            method="POST",
+        )
         try:
-            detail = json.loads(corps).get("error", {}).get("message", corps)
-        except Exception:
-            detail = corps
-        raise ConnectionError(f"Erreur GitHub Models ({e.code}) : {detail}") from e
-    except urllib.error.URLError as e:
-        raise ConnectionError(
-            f"Impossible de joindre GitHub Models.\n"
-            f"Vérifiez votre connexion Internet.\nDétail : {e}"
-        ) from e
+            with urllib.request.urlopen(_req, timeout=timeout) as resp:
+                if on_token:
+                    # Streaming SSE — format identique à OpenAI
+                    for ligne in resp:
+                        if stop_event and stop_event.is_set():
+                            break
+                        ligne_str = ligne.decode("utf-8").strip()
+                        if not ligne_str.startswith("data:"):
+                            continue
+                        data_str = ligne_str[len("data:"):].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices")
+                        if not choices:
+                            continue
+                        token = (
+                            choices[0]
+                            .get("delta", {})
+                            .get("content", "")
+                        )
+                        if token:
+                            reponse_complete.append(token)
+                            on_token(token)
+                else:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    choices = data.get("choices")
+                    if not choices:
+                        raise ValueError(
+                            f"Réponse inattendue de GitHub Models : {json.dumps(data)[:300]}"
+                        )
+                    return choices[0]["message"]["content"]
+            # Succès streaming — sortir de la boucle retry
+            break
+        except urllib.error.HTTPError as e:
+            corps = e.read().decode("utf-8", errors="replace")
+            try:
+                detail = json.loads(corps).get("error", {}).get("message", corps)
+            except Exception:
+                detail = corps
+            # Erreurs transitoires : retry (5xx, 429 rate-limit)
+            if e.code in (429, 500, 502, 503, 504) and _tentative < _max_retries - 1:
+                import time as _time
+                if e.code == 429:
+                    # Respecter le header Retry-After si présent, sinon backoff long
+                    retry_after = e.headers.get("Retry-After") or e.headers.get("x-ratelimit-reset-after")
+                    try:
+                        _delai = max(15, int(retry_after))
+                    except (TypeError, ValueError):
+                        _delai = 15 * (2 ** _tentative)  # 15s, 30s, 60s
+                else:
+                    _delai = 2 ** _tentative  # 1s, 2s, 4s pour les 5xx
+                _derniere_erreur = ConnectionError(f"Erreur GitHub Models ({e.code}) : {detail}")
+                _time.sleep(_delai)
+                reponse_complete.clear()
+                continue
+            raise ConnectionError(f"Erreur GitHub Models ({e.code}) : {detail}") from e
+        except urllib.error.URLError as e:
+            raise ConnectionError(
+                f"Impossible de joindre GitHub Models.\n"
+                f"Vérifiez votre connexion Internet.\nDétail : {e}"
+            ) from e
 
     return "".join(reponse_complete)
 
@@ -1173,7 +1349,20 @@ def appliquer_patch(config_data, patch_ops):
         cle_finale  = parties[-1]
         ancienne    = noeud.get(cle_finale, "<absent>")
         noeud[cle_finale] = valeur
-        descriptions.append(f"• {chemin} : {ancienne!r} → {valeur!r}")
+
+        # Description lisible : évite d'afficher tout un dict imbriqué
+        if isinstance(valeur, dict) and valeur.get("type") == "TECH_OFFICE":
+            nom = valeur.get("nom", cle_finale)
+            desc = f"• Nouveau technicien '{nom}' ajouté (fiche complète)"
+        elif isinstance(valeur, dict) and "jours" in valeur and "heure_debut" in valeur:
+            jours_noms = ["Lun","Mar","Mer","Jeu","Ven","Sam","Dim"]
+            jours_str = ", ".join(jours_noms[j] for j in valeur.get("jours", []) if j < 7)
+            desc = f"• Horaires créés : {jours_str} de {valeur.get('heure_debut',0):.0f}h à {valeur.get('heure_fin',0):.0f}h"
+        elif isinstance(ancienne, dict) and ancienne == {} and isinstance(valeur, dict):
+            desc = f"• {chemin} : créé ({len(valeur)} champs)"
+        else:
+            desc = f"• {chemin} : {ancienne!r} → {valeur!r}"
+        descriptions.append(desc)
 
     return config_copy, descriptions
 
@@ -1241,7 +1430,7 @@ class Conversation:
             .replace("{metriques}",   metriques)
             .replace("{mapping_ids}", mapping_ids)
             .replace("{memoire}",     memoire + profil_txt)
-        )
+        ) + "\n\n" + _construire_regles_style()
 
     def initialiser(self, config, stats_history=None, aggregator=None):
         """Construit le prompt système avec le contexte du labo."""
@@ -1323,10 +1512,11 @@ class Conversation:
             else:
                 rappel_sim = (
                     "[Rappel : réponds UNIQUEMENT en français]\n"
-                    "[INSTRUCTION STRICTE : le contexte indique [AUCUNE_SIMULATION_DISPONIBLE]. "
-                    "Ta réponse doit contenir UNE SEULE phrase courte : invite le gestionnaire à lancer une simulation. "
-                    "RIEN D'AUTRE. Pas de liste, pas de conseils généraux, pas de points à surveiller. "
-                    "Une phrase.]\n\n"
+                    "[Note : aucune simulation n'a encore été lancée. "
+                    "Tu peux discuter normalement avec le gestionnaire sur l'organisation du labo, "
+                    "ses besoins, ses questions. Si la question porte sur des chiffres de performance "
+                    "(temps de transit, taux d'utilisation, rejets...), mentionne qu'il faudra "
+                    "lancer une simulation pour obtenir ces données précises.]\n\n"
                 )
             contenu_envoye = rappel_sim + zoom_prefix + texte_utilisateur
         else:

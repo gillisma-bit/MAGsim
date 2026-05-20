@@ -9,7 +9,39 @@ Permet à un gestionnaire sans compétences techniques de :
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
+import re
+import asyncio
+import tempfile
+import ctypes
 import ui.theme as theme
+
+# ─── TTS (edge-tts, optionnel) ────────────────────────────────────────────────
+try:
+    import edge_tts as _edge_tts
+    TTS_OK = True
+except ImportError:
+    TTS_OK = False
+
+# ─── Micro (sounddevice + numpy, optionnel) ───────────────────────────────────
+try:
+    import sounddevice as _sd
+    import numpy as _np
+    MICRO_OK = True
+except ImportError:
+    MICRO_OK = False
+
+# ─── Whisper (optionnel) ──────────────────────────────────────────────────────
+try:
+    import warnings as _w, os as _os
+    _os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    with _w.catch_warnings():
+        _w.simplefilter("ignore")
+        from faster_whisper import WhisperModel as _WhisperModel
+        _whisper = _WhisperModel("base", device="cpu", compute_type="int8")
+    WHISPER_OK = True
+except Exception:
+    _whisper = None
+    WHISPER_OK = False
 
 
 class TabAssistant:
@@ -26,6 +58,10 @@ class TabAssistant:
         self._derniere_question = ""
         self._derniere_reponse  = ""
         self._patches_session   = []   # descriptions des patches appliqués cette session
+        # ── TTS / Micro ──
+        self._tts_actif   = tk.BooleanVar(value=TTS_OK)
+        self._micro_actif = False
+        self._audio_data  = []
         self._build_ui()
         # Vérification des backends en arrière-plan au démarrage
         threading.Thread(target=self._charger_modeles, daemon=True).start()
@@ -56,7 +92,7 @@ class TabAssistant:
                  font=theme.FONT_BODY).pack(side=tk.LEFT, padx=(0, 4))
 
         self._combo_model = ttk.Combobox(bar_droite, textvariable=self._model,
-                                         width=18, state="readonly",
+                                         width=32, state="readonly",
                                          font=theme.FONT_BODY)
         self._combo_model.pack(side=tk.LEFT)
         self._combo_model.bind("<<ComboboxSelected>>", self._on_model_change)
@@ -69,6 +105,10 @@ class TabAssistant:
                    command=self._dialog_token_github,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
 
+        ttk.Button(bar_droite, text="🎨  Style IA",
+                   command=self._dialog_style_ia,
+                   padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
+
         ttk.Button(bar_droite, text="📊  Sources",
                    command=self._dialog_sources,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
@@ -76,6 +116,20 @@ class TabAssistant:
         ttk.Button(bar_droite, text="↺  Réinitialiser",
                    command=self._reinitialiser_conversation,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
+
+        # ── Bouton TTS ──
+        self._btn_tts_lbl = "🔊 Voix" if TTS_OK else "🔇 Voix"
+        self._btn_tts = tk.Checkbutton(
+            bar_droite,
+            text=self._btn_tts_lbl,
+            variable=self._tts_actif,
+            font=theme.FONT_BODY,
+            bg="#13131f", fg="#89b4fa",
+            selectcolor="#313145",
+            activebackground="#13131f",
+            state="normal" if TTS_OK else "disabled",
+        )
+        self._btn_tts.pack(side=tk.LEFT, padx=(10, 0))
 
         tk.Frame(self.parent, bg="#313145", height=1).pack(fill="x")
 
@@ -162,6 +216,21 @@ class TabAssistant:
         self._saisie.bind("<Return>",       self._on_entree_rapide)
         self._saisie.bind("<Shift-Return>", lambda e: None)  # saut de ligne
 
+        # Bouton micro
+        self._btn_micro_widget = tk.Button(
+            saisie_frame,
+            text="🎤",
+            font=("Segoe UI Emoji", 16),
+            bg="#313145", fg="white",
+            relief="flat", bd=0,
+            padx=8, pady=4,
+            activebackground="#45475a",
+            cursor="hand2" if (MICRO_OK and WHISPER_OK) else "arrow",
+            state="normal" if (MICRO_OK and WHISPER_OK) else "disabled",
+            command=self._toggle_micro,
+        )
+        self._btn_micro_widget.grid(row=0, column=1, sticky="nsew", padx=(4, 2), pady=4)
+
         self._btn_envoyer = tk.Button(
             saisie_frame,
             text="Envoyer\n↵",
@@ -173,7 +242,7 @@ class TabAssistant:
             cursor="hand2",
             command=self._envoyer,
         )
-        self._btn_envoyer.grid(row=0, column=1, sticky="nsew", padx=(4, 8), pady=4)
+        self._btn_envoyer.grid(row=0, column=2, sticky="nsew", padx=(2, 8), pady=4)
 
         # ── Colonne droite : panneau de confirmation de patch ────────────────
         self._panel_confirm = tk.Frame(main, bg="#13131f", width=320)
@@ -299,6 +368,11 @@ class TabAssistant:
 
     def _on_modeles_charges(self, entrees, statuts):
         """Callback UI : peuple le combobox et met à jour le statut."""
+        try:
+            if not self._combo_model.winfo_exists():
+                return
+        except Exception:
+            return
         self._combo_model["values"] = entrees
 
         github_pret = any("GitHub Models" == s for s in statuts)
@@ -425,7 +499,7 @@ class TabAssistant:
         txt.config(state="disabled")
 
         ttk.Button(dlg, text="Fermer", command=dlg.destroy,
-                   padding=(10, 4)).pack(pady=(0, 10))
+                   padding=(10, 4)).pack(side=tk.BOTTOM, pady=(0, 10))
 
     def _dialog_token_github(self):
         """Fenêtre modale pour saisir/modifier le token GitHub."""
@@ -514,6 +588,74 @@ class TabAssistant:
                    padding=(10, 4)).pack(side=tk.RIGHT)
 
         entry.focus_set()
+
+    def _dialog_style_ia(self):
+        """Fenêtre modale pour configurer le style de réponse de l'IA."""
+        from core.ai_assistant import get_style_ia, set_style_ia
+        style_actuel = get_style_ia()
+
+        dlg = tk.Toplevel(self.parent)
+        dlg.title("Style de l'assistant IA")
+        dlg.resizable(False, False)
+        dlg.grab_set()
+        dlg.configure(bg="#1e1e2e")
+
+        self.parent.update_idletasks()
+        px = self.parent.winfo_rootx() + self.parent.winfo_width()  // 2
+        py = self.parent.winfo_rooty() + self.parent.winfo_height() // 2
+        dlg.geometry(f"440x240+{px - 220}+{py - 120}")
+
+        tk.Label(dlg, text="🎨  Style de l'assistant IA",
+                 bg="#1e1e2e", fg="#cba6f7",
+                 font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=18, pady=(14, 10))
+
+        tk.Label(dlg, text="Ces réglages s'appliquent immédiatement à la prochaine réponse.",
+                 bg="#1e1e2e", fg="#6c7086",
+                 font=("Segoe UI", 8)).pack(anchor="w", padx=18, pady=(0, 10))
+
+        var_court = tk.BooleanVar(value=style_actuel.get("reponses_courtes", False))
+        var_questions = tk.BooleanVar(value=style_actuel.get("questions_proactives", True))
+
+        def _case(parent, variable, texte, description):
+            f = tk.Frame(parent, bg="#1e1e2e")
+            f.pack(fill="x", padx=18, pady=4)
+            tk.Checkbutton(f, text=texte, variable=variable,
+                           font=("Segoe UI", 10),
+                           bg="#1e1e2e", fg="#cdd6f4",
+                           selectcolor="#313244",
+                           activebackground="#1e1e2e").pack(anchor="w")
+            tk.Label(f, text=description, bg="#1e1e2e", fg="#6c7086",
+                     font=("Segoe UI", 8)).pack(anchor="w", padx=20)
+
+        _case(dlg, var_court,
+              "Réponses courtes et directes",
+              "Maximum 3-4 phrases, sans introduction ni conclusion.")
+        _case(dlg, var_questions,
+              "Poser une question en fin de réponse",
+              "Décochez pour que l'IA agisse sans demander confirmation.")
+
+        frame_btn = tk.Frame(dlg, bg="#1e1e2e")
+        frame_btn.pack(fill="x", padx=18, pady=16)
+
+        def _sauver():
+            nouveau_style = {
+                "reponses_courtes":    var_court.get(),
+                "questions_proactives": var_questions.get(),
+            }
+            set_style_ia(nouveau_style)
+            # Reconstruire le prompt système immédiatement
+            if self._conversation is not None and self._conversation._config is not None:
+                self._conversation._system = self._conversation._build_system(
+                    self._conversation._config,
+                    self._conversation._stats_history,
+                )
+            dlg.destroy()
+            self._afficher_message_systeme("✓ Style de l'assistant mis à jour.")
+
+        ttk.Button(frame_btn, text="✓  Enregistrer", command=_sauver,
+                   padding=(10, 4)).pack(side=tk.LEFT)
+        ttk.Button(frame_btn, text="Annuler", command=dlg.destroy,
+                   padding=(10, 4)).pack(side=tk.RIGHT)
 
     def _on_model_change(self, _event=None):
         """Détecte le backend à partir du préfixe et réinitialise la conversation."""
@@ -661,11 +803,114 @@ class TabAssistant:
         if patch:
             self._proposer_patch(patch)
 
+        # TTS
+        self._derniere_reponse = texte_propre
+        if self._tts_actif.get() and TTS_OK:
+            threading.Thread(target=self._synthetiser_et_jouer,
+                             args=(texte_propre,), daemon=True).start()
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  TTS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _synthetiser_et_jouer(self, texte: str, voix: str = "fr-FR-DeniseNeural"):
+        """Synthétise le texte et le joue via Windows MCI (thread arrière-plan)."""
+        t = texte
+        t = re.sub(r'```[\s\S]*?```', ' ', t)
+        t = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', t)
+        t = re.sub(r'^#{1,6}\s+', '', t, flags=re.MULTILINE)
+        t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
+        t = re.sub(r'`([^`]+)`', r'\1', t)
+        t = re.sub(r'^\s*[-*]\s+', '', t, flags=re.MULTILINE)
+        t = re.sub(r'\[M\d+\]', '', t)
+        t = re.sub(r'\(\u2192\s*\[M\d+\]\)', '', t)
+        t = re.sub(r' {2,}', ' ', t).strip()
+        if not t:
+            return
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+                chemin = f.name
+            async def _run():
+                comm = _edge_tts.Communicate(t, voix)
+                await comm.save(chemin)
+            asyncio.run(_run())
+            # Lecture via Windows MCI (aucune dépendance supplémentaire)
+            alias = "_magsim_tts"
+            ctypes.windll.winmm.mciSendStringW(
+                f'open "{chemin}" type mpegvideo alias {alias}', None, 0, None)
+            ctypes.windll.winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
+            ctypes.windll.winmm.mciSendStringW(f'close {alias}', None, 0, None)
+        except Exception as exc:
+            print(f"[TTS] {exc}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  Micro (sounddevice + Whisper)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _toggle_micro(self):
+        if not self._micro_actif:
+            self._micro_actif = True
+            self._audio_data  = []
+            self._btn_micro_widget.config(bg="#dc2626", text="⏹")
+            self._lbl_statut.config(text="⬤  Enregistrement… (re-cliquer pour arrêter)", fg="#f38ba8")
+            self._stream = _sd.InputStream(
+                samplerate=16000, channels=1, dtype="int16",
+                callback=self._audio_callback
+            )
+            self._stream.start()
+        else:
+            self._arreter_micro()
+
+    def _audio_callback(self, indata, frames, time, status):
+        self._audio_data.append(indata.copy())
+
+    def _arreter_micro(self):
+        self._micro_actif = False
+        try:
+            self._stream.stop()
+            self._stream.close()
+        except Exception:
+            pass
+        self._btn_micro_widget.config(bg="#313145", text="🎤")
+        self._lbl_statut.config(text="⬤  Transcription…", fg="#f9e2af")
+        threading.Thread(target=self._transcrire_et_injecter, daemon=True).start()
+
+    def _transcrire_et_injecter(self):
+        try:
+            audio = _np.concatenate(self._audio_data, axis=0)
+            if audio.shape[0] < 1600:  # < 0.1 s
+                self.parent.after(0, self._lbl_statut.config,
+                                  {"text": "⬤  Prêt (enregistrement trop court)", "fg": "#585b70"})
+                return
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                chemin_wav = f.name
+            import scipy.io.wavfile as _wavfile
+            _wavfile.write(chemin_wav, 16000,
+                           audio.flatten().astype("int16"))
+            segments, _ = _whisper.transcribe(chemin_wav, language="fr")
+            texte = " ".join(s.text for s in segments).strip()
+            if texte:
+                self.parent.after(0, self._injecter_texte, texte)
+            else:
+                self.parent.after(0, self._lbl_statut.config,
+                                  {"text": "⬤  Rien entendu", "fg": "#585b70"})
+        except Exception as exc:
+            self.parent.after(0, self._lbl_statut.config,
+                              {"text": f"⬤  Erreur micro : {exc}", "fg": "#f38ba8"})
+
+    def _injecter_texte(self, texte: str):
+        self._saisie.delete("1.0", "end")
+        self._saisie.insert("1.0", texte)
+        self._lbl_statut.config(text="⬤  Prêt", fg="#a6e3a1")
+        self._envoyer()
+
     def _erreur_reponse(self, msg):
         self._en_cours = False
         self._btn_envoyer.config(state="normal", text="Envoyer\n↵")
         self._lbl_statut.config(text="⬤  Erreur de connexion", fg="#f38ba8")
         self._chat.config(state="normal")
+        if "(429)" in msg:
+            msg += "\n   → Trop de requêtes en peu de temps. Patientez 30 secondes et réessayez."
         self._chat.insert("end", f"\n⚠️  {msg}\n\n", "error")
         self._chat.config(state="disabled")
         self._chat.see("end")
@@ -750,6 +995,14 @@ class TabAssistant:
         self.config_manager.data = nouveau_data
         self.config_manager.sauvegarder()
 
+        # Détecter les machines ajoutées en zone de dépôt
+        nouvelles_en_attente = [
+            m.get("nom") or k
+            for k, m in nouveau_data.get("machines", {}).items()
+            if isinstance(m, dict) and m.get("en_attente_placement")
+               and m.get("type") not in ("TECH_OFFICE", "ENTREE", "SORTIE", "REPOS")
+        ]
+
         # Enregistrer dans l'historique de session
         detail = " | ".join(descriptions)
         self._patches_session.append(detail)
@@ -760,9 +1013,17 @@ class TabAssistant:
         if ignorees:
             detail_affiche += "\n" + "\n".join(f"⏭ ignoré : {d}" for d in ignorees)
 
+        msg_fin = "Relancez une simulation pour voir l'impact des changements."
+        if nouvelles_en_attente:
+            noms = ", ".join(nouvelles_en_attente)
+            msg_fin = (
+                f"📦  {noms} a été ajouté à la zone de dépôt du plan.\n"
+                "👉  Allez dans l'onglet Configuration, faites glisser l'appareil "
+                "à sa place dans le labo, puis relancez une simulation."
+            )
+
         self._afficher_message_systeme(
-            f"Configuration mise à jour :\n{detail_affiche}\n"
-            "Relancez une simulation pour voir l'impact des changements.",
+            f"Configuration mise à jour :\n{detail_affiche}\n{msg_fin}",
             tag="patch",
         )
 

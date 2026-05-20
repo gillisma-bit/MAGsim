@@ -14,7 +14,7 @@
     "heure_debut": 7.0,
     "pct_urgent": 0.5,
     "_commentaire_flux": "Activité imprévisible 24h/24. Greffe = nombreux tubes simultanés. Pauses d'attente (organe non encore disponible). Rush très intense possible.",
-    "surge_proba": 0.020,
+    "surge_proba": 0.02,
     "surge_facteur": 6.0,
     "surge_duree_min": 30,
     "surge_duree_max": 120,

@@ -4,7 +4,7 @@
     "couleur": "#f39c12",
     "icone": "🏥",
     "position_canvas": {
-        "x": 1640,
+        "x": 1820,
         "y": 160
     },
     "duree_trajet_min": 3.3,
@@ -21,7 +21,7 @@
     "pause_proba": 0.0,
     "pause_duree_min": 0,
     "pause_duree_max": 0,
-    "batch_proba": 0.40,
+    "batch_proba": 0.4,
     "batch_min": 5,
     "batch_max": 20,
     "profil_horaire": [
@@ -62,7 +62,7 @@
     "description": "Tubes provenant d'autres institutions (cliniques partenaires, CLSC, etc.)",
     "chemin_waypoints": [
         [
-            1840,
+            2020,
             202
         ],
         [

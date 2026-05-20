@@ -312,8 +312,16 @@ class TabDiagnostic:
             if m.get("type") in types_fonctionnels:
                 continue
             cap = m.get("capacite", 4)
-            for etape, proto in m.get("protocoles", {}).items():
-                temps = proto.get("temps", 60)
+            protocoles_m = m.get("protocoles", {})
+            if not isinstance(protocoles_m, dict):
+                continue
+            for etape, proto in protocoles_m.items():
+                if isinstance(proto, dict):
+                    temps = proto.get("temps", 60)
+                elif isinstance(proto, (int, float)):
+                    temps = proto
+                else:
+                    temps = 60
                 if temps > 0:
                     debit = cap / temps
                     etape_debit[etape] = etape_debit.get(etape, 0.0) + debit
@@ -820,8 +828,16 @@ class TabDiagnostic:
             if m.get("type") in types_fonctionnels:
                 continue
             cap = m.get("capacite", 4)
-            for etape, proto in m.get("protocoles", {}).items():
-                temps = proto.get("temps", 60)      # minutes SimPy
+            protocoles_m = m.get("protocoles", {})
+            if not isinstance(protocoles_m, dict):
+                continue
+            for etape, proto in protocoles_m.items():
+                if isinstance(proto, dict):
+                    temps = proto.get("temps", 60)      # minutes SimPy
+                elif isinstance(proto, (int, float)):
+                    temps = proto
+                else:
+                    temps = 60
                 if temps > 0:
                     # Un batch de `cap` tubes traités en `temps` min
                     debit = cap / temps
@@ -887,6 +903,9 @@ class TabDiagnostic:
         # ── Conseiller — observations basées sur les faits ────────────────────
         self._section_advisor()
 
+        # ── Analyse IA automatique (post-simulation) ──────────────────────────
+        self._lancer_analyse_ia()
+
         self._freeze()
 
         # Barre de résumé colorée
@@ -946,4 +965,115 @@ class TabDiagnostic:
                     if ligne.strip():
                         self.text.insert("end", f"       {ligne}\n", tag)
             self.text.insert("end", "\n", "dim")
+
+    # ── Analyse IA automatique (post-simulation) ─────────────────────────────
+
+    def _lancer_analyse_ia(self):
+        """Insère un placeholder et démarre l'analyse IA en thread si une simulation est dispo."""
+        import threading
+
+        hist = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        if not hist or not hist.get("time"):
+            return  # pas de données → section IA omise
+
+        try:
+            from core.ai_assistant import github_models_disponible, ollama_disponible
+            has_github = github_models_disponible()
+            has_ollama = ollama_disponible()
+        except Exception:
+            has_github = has_ollama = False
+
+        self._section("7 · Analyse IA — synthèse des résultats")
+        self.text.tag_config("ia_rep", foreground="#cba6f7", font=theme.FONT_MONO_S)
+
+        if not has_github and not has_ollama:
+            self.text.insert("end",
+                "  ⚠️  Aucun modèle IA disponible.\n"
+                "      Configurez un token GitHub dans Paramètres → Assistant IA\n"
+                "      ou lancez Ollama pour activer l'analyse automatique.\n",
+                "warn")
+            return
+
+        # Placeholder "En cours…" — marque ia_result_start pour remplacement ultérieur
+        self.text.mark_set("ia_result_start", self.text.index("end"))
+        self.text.mark_gravity("ia_result_start", "left")
+        self.text.insert("end", "  ⏳  Analyse IA en cours…\n", "info")
+
+        threading.Thread(target=self._analyse_ia_thread, daemon=True).start()
+
+    def _analyse_ia_thread(self):
+        """Thread : construit la synthèse et appelle le LLM."""
+        try:
+            from core.ai_assistant import (
+                construire_contexte, construire_metriques_block,
+                github_models_disponible, envoyer_messages_github,
+                ollama_disponible, envoyer_messages,
+            )
+
+            hist   = getattr(self.tab_live, "stats_history", {}) or {}
+            config = self.config_manager.data
+
+            contexte  = construire_contexte(config, hist)
+            metriques = construire_metriques_block(config, hist)
+
+            synthese = (
+                f"Voici les données de simulation du laboratoire :\n\n"
+                f"{contexte}\n\n"
+                f"{metriques}\n\n"
+            )
+            prompt_user = (
+                "Analyse ces résultats de simulation et donne-moi un diagnostic concis "
+                "(5 à 8 points maximum). Pour chaque point : identifie le problème ou la force, "
+                "cite le chiffre exact qui le justifie, et propose une action concrète si nécessaire. "
+                "Réponds en français, en liste à puces (•)."
+            )
+            prompt_system = (
+                "Tu es un expert en simulation de laboratoires médicaux. "
+                "Tu analyses des résultats de simulation et fournis des diagnostics précis et actionnables. "
+                "Réponds TOUJOURS en français. Sois concis et factuel. "
+                "Ne cite que des chiffres présents dans les métriques fournies."
+            )
+
+            messages = [
+                {"role": "system", "content": prompt_system},
+                {"role": "user",   "content": synthese + prompt_user},
+            ]
+
+            if github_models_disponible():
+                reponse = envoyer_messages_github(messages, model="openai/gpt-4.1-mini", timeout=60)
+            else:
+                reponse = envoyer_messages(messages, model="llama3", timeout=120)
+
+            self.parent.after(0, lambda r=reponse: self._afficher_resultat_ia(r))
+
+        except Exception as exc:
+            msg = f"Erreur lors de l'analyse IA : {exc}"
+            self.parent.after(0, lambda m=msg: self._afficher_resultat_ia(m, erreur=True))
+
+    def _afficher_resultat_ia(self, texte, erreur=False):
+        """Met à jour le widget texte avec la réponse IA (thread principal uniquement)."""
+        try:
+            self.text.config(state="normal")
+            # Supprimer le placeholder entre ia_result_start et la fin
+            try:
+                self.text.delete("ia_result_start", "end")
+            except Exception:
+                pass
+
+            if erreur:
+                self.text.insert("end", f"  ❌  {texte}\n", "error")
+            else:
+                for ligne in texte.split("\n"):
+                    stripped = ligne.strip()
+                    if not stripped:
+                        continue
+                    if stripped.startswith(("•", "-", "*")):
+                        self.text.insert("end", f"  {stripped}\n", "ia_rep")
+                    else:
+                        self.text.insert("end", f"  {stripped}\n", "dim")
+
+            self.text.config(state="disabled")
+            self.text.see("end")
+        except Exception:
+            pass  # widget peut avoir été détruit si l'onglet est fermé
 

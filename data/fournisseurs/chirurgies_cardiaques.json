@@ -21,7 +21,7 @@
     "pause_proba": 0.025,
     "pause_duree_min": 20,
     "pause_duree_max": 90,
-    "batch_proba": 0.20,
+    "batch_proba": 0.2,
     "batch_min": 3,
     "batch_max": 8,
     "profil_horaire": [

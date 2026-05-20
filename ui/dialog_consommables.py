@@ -172,7 +172,8 @@ class DialogConsommables(tk.Toplevel):
                    command=self._nouveau).pack(side=tk.LEFT, padx=4)
 
         self._btn_suppr = tk.Button(frame_btns, text="🗑️ Supprimer",
-                                    bg="#ec4a38", fg="white",
+                                    bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
+                                    activebackground=theme.BTN_DEL_ACT,
                                     font=theme.FONT_BTN_DEL,
                                     command=self._supprimer,
                                     state="disabled")

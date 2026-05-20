@@ -5,12 +5,37 @@ import math
 import random
 import heapq
 import bisect
+import json
+import os
 from collections import deque
 from core.technician import TechnicianState
 from core.stats_aggregator import StatsAggregator
 from core.coordinateur_stress import CoordonnateurStress
 import ui.theme as theme
 import ui.theme as theme
+
+# ─── Pont simulation → Gradio ────────────────────────────────────────────────
+_LAST_SIM_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "last_sim.json")
+
+def _deep_to_list(obj):
+    """Convertit récursivement deques et sets en listes pour la sérialisation JSON."""
+    if isinstance(obj, dict):
+        return {k: _deep_to_list(v) for k, v in obj.items()}
+    if isinstance(obj, (deque, list, tuple, set)):
+        return [_deep_to_list(v) for v in obj]
+    return obj
+
+def sauver_stats_sim(stats_history, transit_times_raw):
+    """Écrit data/last_sim.json — lu automatiquement par gradio_app au prochain chat."""
+    try:
+        data = _deep_to_list(dict(stats_history))
+        data["transit_times_raw"] = list(transit_times_raw)
+        with open(_LAST_SIM_PATH, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False)
+        jours = data["time"][-1] / 1440.0 if data.get("time") else 0
+        print(f"[INFO] Stats simulation sauvées → last_sim.json ({jours:.1f} j simulés)")
+    except Exception as exc:
+        print(f"[WARN] Impossible de sauvegarder last_sim.json : {exc}")
 
 
 def _score_priorite(tube, now, mult_urgence=1.0, mult_validite=1.0, mult_age=1.0):
@@ -108,6 +133,7 @@ class TabLive:
         self.stats_history = {"time": deque(maxlen=_MX), "queues": {}, "output": {}, "busy": {}, "entry": deque(maxlen=_MX),
                               "transit_time_avg": deque(maxlen=_MX), "transit_time_rolling": deque(maxlen=_MX),
                               "transit_time_pending_max": deque(maxlen=_MX),
+                              "tat_normal_rolling": deque(maxlen=_MX), "tat_urgent_rolling": deque(maxlen=_MX),
                               "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX), "pannes": {},
                               "distances_tech": {}, "bienetre": {},
                               "arrivees_par_heure": {},
@@ -119,13 +145,19 @@ class TabLive:
         self.coordinateur = CoordonnateurStress(intervalle_min=15)
         self.stats_tubes_total = 0
         self.tubes_sortis = 0  # Tubes ayant atteint la sortie
-        self.transit_times_raw = deque(maxlen=10_000)  # Durées de transit individuelles
+        self.transit_times_raw = deque(maxlen=10_000)  # Durées de transit individuelles (minutes réelles)
         self._transit_sum = 0.0       # somme courante pour avg O(1)
         self.transit_times_urgents = deque(maxlen=10_000)  # Idem pour les tubes urgents uniquement
+        self.transit_times_normaux = deque(maxlen=10_000)  # Idem pour les tubes non-urgents
+        # TAT et préanalyse par type de tube : {type_key: {"normal": deque, "urgent": deque}}
+        self.tat_par_type: dict = {}
+        # Temps préanalytique par type : {type_key: deque de durées en min réelles}
+        self.preanalyse_par_type: dict = {}
         self.headless = False  # True = simulation accélérée sans animation (mode goulots)
         self.turbo = False  # True = 10 pas SimPy par tick (×10 vitesse)
         self.paused = False  # True = simulation gelée (bouton ⏸)
         self._sol_cache = None  # Cache du sol grid, initialisé au lancement de la simulation
+        self._machine_cells = set()  # Cases occupées par les machines (obstacles A*)
         self._lab_col_min = 0   # Périmètre labo (calculé depuis sol à l'init du cache)
         self._lab_col_max = 60
         self._lab_row_min = 0
@@ -218,6 +250,31 @@ class TabLive:
                                      font=theme.FONT_BODY, foreground="#e67e22")
         self.lbl_erreurs.pack(side=tk.RIGHT, padx=15)
 
+        # ── Tableau TAT par type de tube ─────────────────────────────────────
+        _tat_outer = ttk.LabelFrame(self.parent,
+                                    text="Temps de traitement par type de tube (20 derniers)")
+        _tat_outer.pack(fill="x", padx=10, pady=(0, 4))
+
+        _cols = ("type", "theorique", "tat_normal", "tat_urgent", "preanalyse")
+        self.treeview_tat = ttk.Treeview(_tat_outer, columns=_cols, show="headings",
+                                         height=4, selectmode="none")
+        _hdrs = [
+            ("type",       "Type de tube",                   160),
+            ("theorique",  "Temps théorique",                120),
+            ("tat_normal", "TAT moy. normaux (20 dern.)",    160),
+            ("tat_urgent", "TAT moy. urgents (20 dern.)",    160),
+            ("preanalyse", "Préanalyse moy. (transit)",      160),
+        ]
+        for col, hdr, w in _hdrs:
+            self.treeview_tat.heading(col, text=hdr)
+            self.treeview_tat.column(col, width=w, anchor="center", stretch=True)
+
+        _sb = ttk.Scrollbar(_tat_outer, orient="vertical",
+                            command=self.treeview_tat.yview)
+        self.treeview_tat.configure(yscrollcommand=_sb.set)
+        self.treeview_tat.pack(side="left", fill="x", expand=True)
+        _sb.pack(side="right", fill="y")
+
         # Afficher le plan du labo dès l'ouverture (avant de lancer la simulation)
         self.parent.after(50, self.dessiner_labo_complet)
 
@@ -236,6 +293,75 @@ class TabLive:
             h = int(t_total // 60) % 24
             m = int(t_total % 60)
             self.lbl_heure.config(text=f"🕐 {h:02d}:{m:02d}")
+
+        # ── Mise à jour du tableau TAT par type de tube ─────────────────────
+        self._maj_tableau_tat()
+
+    def _maj_tableau_tat(self):
+        """Recalcule et rafraîchit le Treeview des temps de traitement par type."""
+
+        def _fmt(val_min):
+            """Formate une durée en minutes réelles (ex: 3h05 ou 47 min)."""
+            if val_min is None:
+                return "—"
+            v = int(val_min)
+            return f"{v // 60}h{v % 60:02d}" if v >= 60 else f"{v} min"
+
+        def _moy20(dq):
+            """Retourne la moyenne des 20 dernières valeurs d'une deque, ou None."""
+            if not dq:
+                return None
+            w = list(dq)[-20:]
+            return sum(w) / len(w)
+
+        def _temps_theorique(type_key):
+            """Somme des durées de protocole pour un type de tube (min réelles)."""
+            conf = self.types_tubes.get(type_key, {})
+            workflow = conf.get("workflow", [])
+            machines = self.config_manager.get_machines()
+            total = 0
+            for step in workflow:
+                for m in machines.values():
+                    protos = m.get("protocoles", {})
+                    if step in protos:
+                        total += protos[step].get("temps", 0)
+                        break
+            return total
+
+        # Reconstruire toutes les lignes
+        tree = self.treeview_tat
+        existing = tree.get_children()
+        existing_map = {tree.set(iid, "type"): iid for iid in existing}
+
+        for tkey, tconf in self.types_tubes.items():
+            label = tconf.get("label") or tconf.get("nom") or tkey
+            theorique = _temps_theorique(tkey)
+
+            tat_n_dq  = self.tat_par_type.get(tkey, {}).get("normal")
+            tat_u_dq  = self.tat_par_type.get(tkey, {}).get("urgent")
+            preana_dq = self.preanalyse_par_type.get(tkey)
+
+            vals = (
+                label,
+                _fmt(theorique),
+                _fmt(_moy20(tat_n_dq)),
+                _fmt(_moy20(tat_u_dq)),
+                _fmt(_moy20(preana_dq)),
+            )
+
+            if tkey in existing_map:
+                tree.item(existing_map[tkey], values=vals)
+            else:
+                tree.insert("", "end", iid=tkey, values=vals)
+
+        # Supprimer les lignes obsolètes (type retiré de la config)
+        for iid in existing:
+            if tree.set(iid, "type") not in {
+                (c.get("label") or c.get("nom") or k)
+                for k, c in self.types_tubes.items()
+            }:
+                tree.delete(iid)
+
 
     def dessiner_labo_complet(self):
         """Redessine le labo avec sol et machines, sans superposer les labels."""
@@ -261,6 +387,22 @@ class TabLive:
                 pass
         
         # Machines
+        _COULEURS_MACHINE = {
+            "Centrifugeuse":    "#3498db",
+            "Automate":         "#e67e22",
+            "Paillasse":        "#95a5a6",
+            "Incubateur":       "#e91e63",
+            "Réfrigérateur":    "#00bcd4",
+            "Laveur de plaque": "#009688",
+            "Lecteur de plaque":"#4caf50",
+            "Bain-marie":       "#ff5722",
+            "Agitateur":        "#9c27b0",
+            "Microscope":       "#607d8b",
+            "Hotte":            "#795548",
+            "Congélateur":      "#5c6bc0",
+            "ENTREE":           "#2ecc71",
+            "SORTIE":           "#e74c3c",
+        }
         machines = self.config_manager.get_machines()
         for nom, m in machines.items():
             typ = m["type"]
@@ -279,62 +421,70 @@ class TabLive:
                 continue
 
             if typ == "ENTREE":
-                color = "#2ecc71"
+                color = _COULEURS_MACHINE["ENTREE"]
             elif typ == "SORTIE":
-                color = "#e74c3c"
+                color = _COULEURS_MACHINE["SORTIE"]
             else:
-                color = "#3498db"
+                color = _COULEURS_MACHINE.get(typ, "#3498db")
 
-            rect_id = self.canvas.create_rectangle(x-25, y-25, x+25, y+25,
+            larg = m.get("largeur_cases", 1)
+            haut = m.get("hauteur_cases", 1)
+            half_w = larg * 25
+            half_h = haut * 25
+
+            rect_id = self.canvas.create_rectangle(x - half_w, y - half_h, x + half_w, y + half_h,
                                                    fill=color, outline="black", width=2)
             if typ not in ("ENTREE", "SORTIE"):
                 self.machine_rect_ids[nom] = rect_id
-            self.canvas.create_text(x, y+30, text=nom, font=theme.FONT_NOTE)
+            self.canvas.create_text(x, y + half_h + 10, text=nom, font=theme.FONT_NOTE)
 
             # Point indicateur (rouge = en travail) — masqué par défaut
             if typ not in ("ENTREE", "SORTIE"):
-                ind_id = self.canvas.create_oval(x+15, y-25, x+25, y-15,
+                ind_id = self.canvas.create_oval(x + half_w - 10, y - half_h,
+                                                 x + half_w, y - half_h + 10,
                                                  fill="", outline="", tags=f"ind_{nom}")
                 self.machine_indicators[nom] = ind_id
 
             # --- Labels par machine (sauf SORTIE) ---
             if typ == "ENTREE":
                 # ENTREE : un seul label haut (nb tubes en attente à l'entrée)
-                self.canvas.create_rectangle(x-40, y-52, x+40, y-37, fill="white", outline="#27ae60", width=1)
-                lbl = self.canvas.create_text(x, y-44, text=f"{nom}: 0",
+                self.canvas.create_rectangle(x - 40, y - half_h - 17, x + 40, y - half_h - 2,
+                                             fill="white", outline="#27ae60", width=1)
+                lbl = self.canvas.create_text(x, y - half_h - 10, text=f"{nom}: 0",
                                               font=theme.FONT_NOTE, fill="#27ae60")
                 self.machine_labels[nom] = lbl
 
             elif typ == "SORTIE":
                 # Label SORTIE : compteur de tubes traités
-                self.canvas.create_rectangle(x-40, y-52, x+40, y-37, fill="white", outline="#e74c3c", width=1)
-                lbl_s = self.canvas.create_text(x, y-44, text="Sortis : 0",
+                self.canvas.create_rectangle(x - 40, y - half_h - 17, x + 40, y - half_h - 2,
+                                             fill="white", outline="#e74c3c", width=1)
+                lbl_s = self.canvas.create_text(x, y - half_h - 10, text="Sortis : 0",
                                                 font=theme.FONT_NOTE, fill="#e74c3c")
                 self.machine_labels[nom] = lbl_s
 
             else:
-                # --- Label HAUT : tubes total entrés dans la machine ---
-                self.canvas.create_rectangle(x-35, y-52, x+35, y-37,
+                # --- Label HAUT : nom de la machine ---
+                self.canvas.create_rectangle(x - 35, y - half_h - 17, x + 35, y - half_h - 2,
                                              fill="white", outline="gray", width=1)
-                lbl_top = self.canvas.create_text(x, y-44, text=f"{nom}",
+                lbl_top = self.canvas.create_text(x, y - half_h - 10, text=f"{nom}",
                                                   font=theme.FONT_NOTE, fill="#2c3e50")
                 self.machine_labels[nom] = lbl_top
 
-                # --- Label DROITE : file d'attente (tubes déposés, pas encore traités) ---
-                self.canvas.create_rectangle(x+28, y-12, x+70, y+12,
+                # --- Label DROITE : file d'attente ---
+                self.canvas.create_rectangle(x + half_w + 2, y - 12, x + half_w + 44, y + 12,
                                              fill="#fef9e7", outline="#e67e22", width=1)
-                self.canvas.create_text(x+49, y-16, text="En attente",
+                self.canvas.create_text(x + half_w + 23, y - 16, text="Attente",
                                         font=theme.FONT_NOTE, fill="#e67e22")
-                lbl_q = self.canvas.create_text(x+49, y, text="0",
+                lbl_q = self.canvas.create_text(x + half_w + 23, y, text="0",
                                                 font=theme.FONT_BODY, fill="#e67e22")
                 self.machine_labels_queue[nom] = lbl_q
 
-                # --- Label GAUCHE : tubes traités prêts à partir ---
-                self.canvas.create_rectangle(x-70, y-12, x-28, y+12,
+                # --- Label GAUCHE : tubes traités prêts ---
+                self.canvas.create_rectangle(x - half_w - 44, y - 12, x - half_w - 2, y + 12,
                                              fill="#eafaf1", outline="#27ae60", width=1)
-                self.canvas.create_text(x-49, y-16, text="Prêts",
+                self.canvas.create_text(x - half_w - 23, y - 16, text="Prêts",
                                         font=theme.FONT_NOTE, fill="#27ae60")
-                lbl_o = self.canvas.create_text(x-49, y, text="0",
+                lbl_o = self.canvas.create_text(x - half_w - 23, y, text="0",
                                                 font=theme.FONT_BODY, fill="#27ae60")
                 self.machine_labels_output[nom] = lbl_o
 
@@ -385,12 +535,14 @@ class TabLive:
                 print(f"[ERREUR UPDATE_LABELS] {e}")
 
     def est_libre(self, x, y):
-        """Vérifie si une position est libre"""
+        """Vérifie si une position est libre (ni COUNTER/WALL ni machine)."""
+        if self._sol_cache is None:
+            self._init_sol_cache()
         col, row = int(x // 50), int(y // 50)
         cle = f"{col}_{row}"
-        if self._sol_cache is None:
-            self._sol_cache = self.config_manager.data.get("sol", {})
         if cle in self._sol_cache and self._sol_cache[cle] in ("COUNTER", "WALL"):
+            return False
+        if (col, row) in self._machine_cells:
             return False
         return True
 
@@ -427,6 +579,7 @@ class TabLive:
                 self.stats_history = {"time": deque(maxlen=_MX), "queues": {}, "output": {}, "busy": {}, "entry": deque(maxlen=_MX),
                                       "transit_time_avg": deque(maxlen=_MX), "transit_time_rolling": deque(maxlen=_MX),
                                       "transit_time_pending_max": deque(maxlen=_MX),
+                                      "tat_normal_rolling": deque(maxlen=_MX), "tat_urgent_rolling": deque(maxlen=_MX),
                                       "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX), "pannes": {},
                                       "distances_tech": {}, "bienetre": {},
                                       "arrivees_par_heure": {},
@@ -449,6 +602,9 @@ class TabLive:
                 self.transit_times_raw = deque(maxlen=10_000)
                 self._transit_sum = 0.0
                 self.transit_times_urgents = deque(maxlen=10_000)
+                self.transit_times_normaux = deque(maxlen=10_000)
+                self.tat_par_type = {}
+                self.preanalyse_par_type = {}
                 self.prochaine_arrivee = 0
                 self.panne_machines = set()
                 self.paillasse_analyste = set()
@@ -554,6 +710,7 @@ class TabLive:
             finally:
                 self.running = False
                 self.headless = False
+                sauver_stats_sim(self.stats_history, self.transit_times_raw)
                 if on_complete:
                     on_complete()
 
@@ -701,6 +858,7 @@ class TabLive:
                     "transit_time_avg": deque(maxlen=_MX),
                     "transit_time_rolling": deque(maxlen=_MX),
                     "transit_time_pending_max": deque(maxlen=_MX),
+                    "tat_normal_rolling": deque(maxlen=_MX), "tat_urgent_rolling": deque(maxlen=_MX),
                     "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX),
                     "pannes": {}, "distances_tech": {}, "bienetre": {},
                     "arrivees_par_heure": {}, "arrivees_par_heure_par_service": {},
@@ -719,6 +877,9 @@ class TabLive:
                 self.transit_times_raw = deque(maxlen=10_000)
                 self._transit_sum = 0.0
                 self.transit_times_urgents = deque(maxlen=10_000)
+                self.transit_times_normaux = deque(maxlen=10_000)
+                self.tat_par_type = {}
+                self.preanalyse_par_type = {}
                 self.prochaine_arrivee = 0
                 self.panne_machines = set()
                 self.paillasse_analyste = set()
@@ -979,6 +1140,7 @@ class TabLive:
                                   "bienetre": {},
                                   "transit_time_avg": deque(maxlen=_MX), "transit_time_rolling": deque(maxlen=_MX),
                                   "transit_time_pending_max": deque(maxlen=_MX),
+                                  "tat_normal_rolling": deque(maxlen=_MX), "tat_urgent_rolling": deque(maxlen=_MX),
                                   "rejetes": deque(maxlen=_MX), "degrades": deque(maxlen=_MX), "pannes": {},
                                   "distances_tech": {},
                                   "arrivees_par_heure": {},
@@ -1000,6 +1162,9 @@ class TabLive:
             self.transit_times_raw = deque(maxlen=10_000)
             self._transit_sum = 0.0
             self.transit_times_urgents = deque(maxlen=10_000)
+            self.transit_times_normaux = deque(maxlen=10_000)
+            self.tat_par_type = {}
+            self.preanalyse_par_type = {}
             self.panne_machines = set()
             self.paillasse_analyste = set()
             self.machine_repair_events = {}
@@ -1056,6 +1221,7 @@ class TabLive:
                     except Exception:
                         pass
             self.technicians = []
+            sauver_stats_sim(self.stats_history, self.transit_times_raw)
             print("[INFO] Simulation arrêtée")
 
     def toggle_turbo(self):
@@ -1170,6 +1336,28 @@ class TabLive:
           "labo_bounds": {"col_min": 0, "col_max": 25, "row_min": 0, "row_max": 23}
         """
         self._sol_cache = self.config_manager.data.get("sol", {})
+
+        # Calculer les cases bloquées par les machines (obstacles A*)
+        # Les machines spéciales (ENTREE, SORTIE, TECH_OFFICE, REPOS) ne bloquent pas
+        _SPECIAUX_CACHE = {"ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"}
+        _CELL = 50
+        self._machine_cells = set()
+        try:
+            for _nom, _m in self.config_manager.get_machines().items():
+                if _m.get("type") in _SPECIAUX_CACHE:
+                    continue
+                _cx = _m["coords"]["x"]
+                _cy = _m["coords"]["y"]
+                _larg = _m.get("largeur_cases", 1)
+                _haut = _m.get("hauteur_cases", 1)
+                _col0 = round(_cx / _CELL - _larg / 2)
+                _row0 = round(_cy / _CELL - _haut / 2)
+                for _dc in range(_larg):
+                    for _dr in range(_haut):
+                        self._machine_cells.add((_col0 + _dc, _row0 + _dr))
+        except Exception:
+            pass
+
         _override = self.config_manager.data.get("labo_bounds", {})
         if _override:
             self._lab_col_min = int(_override.get("col_min", 0))
@@ -1209,20 +1397,32 @@ class TabLive:
           "labo_bounds": {"col_min": 0, "col_max": 23, "row_min": 0, "row_max": 21}
         """
         CELL = 50
-        if self._sol_cache is None:
+        # Toujours appeler _init_sol_cache pour garantir que _machine_cells est à jour
+        if self._sol_cache is None or not self._machine_cells and self.config_manager.get_machines():
             self._init_sol_cache()
         sol = self._sol_cache
 
+        sc, sr = int(start_x // CELL), int(start_y // CELL)
+        gc, gr = int(goal_x // CELL), int(goal_y // CELL)
+
         def walkable(col, row):
+            # La case d'arrivée est toujours accessible (centre de machine dans un comptoir)
+            if (col, row) == (gc, gr):
+                return True
+            # La case de départ est toujours accessible (tech déjà là)
+            if (col, row) == (sc, sr):
+                return True
             # Hors périmètre labo → jamais walkable
             if not (self._lab_col_min <= col <= self._lab_col_max
                     and self._lab_row_min <= row <= self._lab_row_max):
                 return False
             cle = f"{col}_{row}"
-            return cle not in sol or sol[cle] not in ("COUNTER", "WALL")
-
-        sc, sr = int(start_x // CELL), int(start_y // CELL)
-        gc, gr = int(goal_x // CELL), int(goal_y // CELL)
+            if cle in sol and sol[cle] in ("COUNTER", "WALL"):
+                return False
+            # Cases occupées par des machines : bloquées
+            if (col, row) in self._machine_cells:
+                return False
+            return True
 
         # Si la cellule de départ est bloquée, chercher la plus proche libre
         if not walkable(sc, sr):
@@ -1284,8 +1484,21 @@ class TabLive:
                     came_from[(nc, nr)] = (col, row)
                     heapq.heappush(open_set, (ng + h(nc, nr), ng, nc, nr))
 
-        # Aucun chemin trouvé — aller directement
-        return [(goal_x, goal_y)]
+        # Aucun chemin trouvé — chercher la case walkable la plus proche du but
+        # plutôt que d'aller en ligne droite (qui traverserait les obstacles)
+        meilleure = None
+        meilleure_dist = float('inf')
+        for _dr in range(-4, 5):
+            for _dc in range(-4, 5):
+                _nc, _nr = gc + _dc, gr + _dr
+                if walkable(_nc, _nr) or (_nc, _nr) == (gc, gr):
+                    _d = abs(_dc) + abs(_dr)
+                    if _d < meilleure_dist:
+                        meilleure_dist = _d
+                        meilleure = (_nc * CELL + CELL // 2, _nr * CELL + CELL // 2)
+        if meilleure:
+            return [meilleure]
+        return []  # Vraiment inaccessible — le tech ne bouge pas
 
     def deplacer_vers(self, tech, target_x, target_y, interruptible=False):
         """Déplace le technicien `tech` vers une destination en suivant un chemin A*.
@@ -1477,13 +1690,26 @@ class TabLive:
             sh["transit_time_avg"].append(avg_transit)
             sh["transit_time_rolling"].append(rolling_transit)
 
+            # TAT glissant séparé normaux vs urgents (20 derniers de chaque)
+            if self.transit_times_normaux:
+                w_n = list(self.transit_times_normaux)[-20:]
+                sh["tat_normal_rolling"].append(sum(w_n) / len(w_n))
+            else:
+                sh["tat_normal_rolling"].append(None)
+            if self.transit_times_urgents:
+                w_u = list(self.transit_times_urgents)[-20:]
+                sh["tat_urgent_rolling"].append(sum(w_u) / len(w_u))
+            else:
+                sh["tat_urgent_rolling"].append(None)
+
             # Âge du plus vieux tube encore en attente dans le système
             all_pending = list(self.entry_queue)
             for _q in self.machine_queues.values():
                 all_pending.extend(_q)
             for _q in self.output_queues.values():
                 all_pending.extend(_q)
-            ages_en_attente = [t - tube["arrivee"] for tube in all_pending if "arrivee" in tube]
+            # Temps hors-machine uniquement (1 SimPy = 1 min réelle pour les files/transports)
+            ages_en_attente = [(t - tube["arrivee"]) for tube in all_pending if "arrivee" in tube]
             pending_max = max(ages_en_attente) if ages_en_attente else None
             sh["transit_time_pending_max"].append(pending_max)
 
@@ -1628,6 +1854,9 @@ class TabLive:
             # GARDE : _machines_batch_actif empêche tout doublon de processus.
             for nom_wm, conf_wm in machines.items():
                 if conf_wm.get("type") in ("ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"):
+                    continue
+                # Les machines de stockage (frigo, congélateur) ne font pas de traitement par batch
+                if conf_wm.get("sous_categorie") == "STOCKAGE":
                     continue
                 q_wm = self.machine_queues.get(nom_wm, [])
                 if q_wm and nom_wm not in self._machines_batch_actif:
@@ -2099,6 +2328,16 @@ class TabLive:
 
             for tube in lot:
                 tube["arrivee"] = now   # temps d'arrivée effective au labo
+                # Temps préanalytique (transit navette) en minutes réelles
+                t_gen = tube.get("t_generation", now)
+                if now > t_gen:
+                    # Temps préanalytique = pure attente + transit navette, pas de compression
+                    # (la navette n'utilise pas timeout(temps/10), 1 SimPy = 1 min réelle)
+                    preana = now - t_gen
+                    ttype = tube.get("type", "?")
+                    if ttype not in self.preanalyse_par_type:
+                        self.preanalyse_par_type[ttype] = deque(maxlen=2_000)
+                    self.preanalyse_par_type[ttype].append(preana)
                 heure_abs = int((now / 60 + self.heure_debut_sim)) % 24
                 aph       = self.stats_history["arrivees_par_heure"]
                 aph[heure_abs] = aph.get(heure_abs, 0) + 1
@@ -2859,12 +3098,26 @@ class TabLive:
                             temps_analyse = (protocoles.get(etape_eff, {}).get("temps", 60)
                                              if protocoles else 60)
 
-                            # Rester en poste tant que la file ou la machine sont actives.
-                            # Si le quart se termine, on abandonne le poste (les tubes
-                            # restants seront traités par le prochain tech qui déposera).
+                            # Limite : rester au poste au plus N batches complets.
+                            # Évite qu'un tech reste bloqué indéfiniment quand les tubes
+                            # arrivent en continu (seuil=1 → chaque tube déclenche un batch).
+                            # Un autre tech (ou le même au prochain tour) prendra le relais.
+                            _max_batches_poste = max(3, machine.get("capacite", 4))
+                            _batches_vus = 0
+                            _etait_blinking = nom_machine in self.blinking_machines
+
                             while (self.machine_queues.get(nom_machine)
                                    or nom_machine in self.blinking_machines):
                                 yield self.env.timeout(temps_analyse / 10)
+                                # Détecter la fin d'un batch (blinking s'éteint puis se rallume)
+                                _blinking_now = nom_machine in self.blinking_machines
+                                if _etait_blinking and not _blinking_now:
+                                    _batches_vus += 1
+                                _etait_blinking = _blinking_now
+                                # Légère récupération de fatigue pendant l'attente passive
+                                tech.fatigue_courante = max(0.0, tech.fatigue_courante - 0.0002)
+                                if _batches_vus >= _max_batches_poste:
+                                    break  # Relâcher le poste — un autre tech prendra le relais
                                 if (tech.en_arret_maladie
                                         or (not self._tech_est_en_service(tech)
                                             and not getattr(tech, '_garde_actif', False))):
@@ -2921,7 +3174,12 @@ class TabLive:
                 now = self.env.now
                 for tube in vers_sortie:
                     if "arrivee" in tube:
-                        tat = now - tube["arrivee"]
+                        # TAT réel = temps hors-machine (1:1) + temps machine SimPy ×10
+                        # Les protocoles s'exécutent via timeout(temps/10), donc
+                        # machine_simpy × 10 = minutes réelles en machine.
+                        # Le reste (déplacements, files) est déjà en minutes réelles.
+                        machine_simpy = tube.get("_machine_temps_simpy", 0)
+                        tat = (now - tube["arrivee"]) + machine_simpy * 9
                         # Si la deque est pleine, soustraire l'élément qui va être évincé
                         # pour garder _transit_sum cohérent sans sum() O(n).
                         if len(self.transit_times_raw) == self.transit_times_raw.maxlen:
@@ -2930,6 +3188,19 @@ class TabLive:
                         self._transit_sum += tat
                         if tube.get("urgent"):
                             self.transit_times_urgents.append(tat)
+                        else:
+                            self.transit_times_normaux.append(tat)
+                        # Enregistrement TAT par type de tube
+                        ttype = tube.get("type", "?")
+                        if ttype not in self.tat_par_type:
+                            self.tat_par_type[ttype] = {
+                                "normal": deque(maxlen=2_000),
+                                "urgent": deque(maxlen=2_000),
+                            }
+                        if tube.get("urgent"):
+                            self.tat_par_type[ttype]["urgent"].append(tat)
+                        else:
+                            self.tat_par_type[ttype]["normal"].append(tat)
                 # Retirer + supprimer APRÈS l'arrivée
                 self.tubes_sortis += len(vers_sortie)
                 _vs_ids = {id(t) for t in vers_sortie}
@@ -3126,7 +3397,18 @@ class TabLive:
 
             if not self.headless and self.canvas.winfo_exists():
                 if nom_machine in self.machine_rect_ids:
-                    self.canvas.itemconfig(self.machine_rect_ids[nom_machine], fill="#3498db")
+                    machines_cfg = self.config_manager.get_machines()
+                    _typ_rep = machines_cfg.get(nom_machine, {}).get("type", "")
+                    _couleurs_rep = {
+                        "Centrifugeuse": "#3498db", "Automate": "#e67e22",
+                        "Paillasse": "#95a5a6", "Incubateur": "#e91e63",
+                        "Réfrigérateur": "#00bcd4", "Laveur de plaque": "#009688",
+                        "Lecteur de plaque": "#4caf50", "Bain-marie": "#ff5722",
+                        "Agitateur": "#9c27b0", "Microscope": "#607d8b",
+                        "Hotte": "#795548", "Congélateur": "#5c6bc0",
+                    }
+                    _color_rep = _couleurs_rep.get(_typ_rep, "#3498db")
+                    self.canvas.itemconfig(self.machine_rect_ids[nom_machine], fill=_color_rep)
                 if nom_machine in self.machine_labels:
                     self.canvas.itemconfig(self.machine_labels[nom_machine], text=nom_machine)
 
@@ -3211,6 +3493,14 @@ class TabLive:
             batch = _batch_viables
 
             yield self.env.timeout(temps / 10)
+
+            # Accumuler le temps machine SimPy sur chaque tube du batch
+            # (utilisé pour calculer le TAT réel : non-machine en 1:1, machine en ×10)
+            machine_simpy_elapsed = temps / 10
+            for _tb in batch:
+                _tb["_machine_temps_simpy"] = (
+                    _tb.get("_machine_temps_simpy", 0) + machine_simpy_elapsed
+                )
 
             delai_max = machine.get("delai_max_avant_degrad", None)
             if delai_max is not None:

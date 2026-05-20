@@ -4,8 +4,8 @@
         "ct1": {
             "type": "Centrifugeuse",
             "coords": {
-                "x": 825,
-                "y": 675
+                "x": 1075.0,
+                "y": 525.0
             },
             "capacite": 4,
             "protocoles": {
@@ -24,8 +24,8 @@
         "au1": {
             "type": "Automate",
             "coords": {
-                "x": 475,
-                "y": 125
+                "x": 275.0,
+                "y": 100.0
             },
             "capacite": 10,
             "protocoles": {
@@ -39,7 +39,9 @@
             "tmep": 6000.0,
             "tmr": 60.0,
             "delai_max_avant_degrad": 360,
-            "tech_requis_poste": false
+            "tech_requis_poste": false,
+            "largeur_cases": 3,
+            "hauteur_cases": 2
         },
         "IN": {
             "type": "ENTREE",
@@ -124,13 +126,13 @@
             "type": "Paillasse",
             "tech_requis_poste": true,
             "coords": {
-                "x": 675,
-                "y": 325
+                "x": 650.0,
+                "y": 325.0
             },
             "capacite": 5,
             "protocoles": {
                 "culot 1": {
-                    "temps": 100,
+                    "temps": 30,
                     "type_compatible": "Paillasse"
                 },
                 "surnageant1": {
@@ -142,12 +144,14 @@
             "file_max": 25,
             "tmep": 12.0,
             "tmr": 0.33,
-            "delai_max_avant_degrad": 300
+            "delai_max_avant_degrad": 300,
+            "largeur_cases": 2,
+            "hauteur_cases": 1
         },
         "b1": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 675.0,
+                "x": 975.0,
                 "y": 875.0
             },
             "capacite": 4,
@@ -156,15 +160,15 @@
             "experience": 3,
             "age": 18,
             "seuil_charge_fatigue": 0.7,
-            "taux_montee_fatigue": 0.01,
+            "taux_montee_fatigue": 0.001,
             "capacite_max_tubes": 10,
-            "nom": "Marc",
+            "nom": "Gustave",
             "taux_recuperation_nuit": 0.15
         },
         "b2": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 775.0,
+                "x": 975.0,
                 "y": 875.0
             },
             "capacite": 4,
@@ -175,7 +179,7 @@
             "experience": 4,
             "age": 45,
             "seuil_charge_fatigue": 0.75,
-            "taux_montee_fatigue": 0.008,
+            "taux_montee_fatigue": 0.003,
             "capacite_max_tubes": 12,
             "nom": "Antoine",
             "taux_recuperation_nuit": 0.15
@@ -184,15 +188,15 @@
             "type": "Paillasse",
             "tech_requis_poste": true,
             "coords": {
-                "x": 475,
-                "y": 325
+                "x": 450.0,
+                "y": 325.0
             },
             "capacite": 5,
             "file_max": 20,
             "seuil": 1,
             "protocoles": {
                 "culot 1": {
-                    "temps": 100,
+                    "temps": 30,
                     "type_compatible": "Paillasse"
                 },
                 "surnageant1": {
@@ -200,15 +204,17 @@
                     "type_compatible": "Paillasse"
                 }
             },
-            "tmep": 12,
+            "tmep": 12.0,
             "tmr": 0.33,
-            "delai_max_avant_degrad": 300
+            "delai_max_avant_degrad": 300,
+            "largeur_cases": 2,
+            "hauteur_cases": 1
         },
         "ct2": {
             "type": "Centrifugeuse",
             "coords": {
-                "x": 675,
-                "y": 675
+                "x": 1075.0,
+                "y": 625.0
             },
             "capacite": 10,
             "file_max": 30,
@@ -227,8 +233,8 @@
         "Arnaud": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 875,
-                "y": 875
+                "x": 975.0,
+                "y": 875.0
             },
             "capacite": 4,
             "file_max": 4,
@@ -240,13 +246,14 @@
             "pct_erreur_tech": 0.0,
             "seuil_charge_fatigue": 0.7,
             "taux_montee_fatigue": 0.01,
-            "capacite_max_tubes": 10
+            "capacite_max_tubes": 10,
+            "taux_recuperation_nuit": 0.15
         },
         "au2": {
             "type": "Automate",
             "coords": {
-                "x": 675,
-                "y": 125
+                "x": 775.0,
+                "y": 100.0
             },
             "capacite": 5,
             "file_max": 20,
@@ -259,7 +266,9 @@
             },
             "tech_requis_poste": false,
             "tmep": 6000.0,
-            "tmr": 60.0
+            "tmr": 60.0,
+            "largeur_cases": 3,
+            "hauteur_cases": 2
         },
         "OUT": {
             "type": "SORTIE",
@@ -275,8 +284,8 @@
         "tech nuit": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 525,
-                "y": 875
+                "x": 975.0,
+                "y": 875.0
             },
             "capacite": 4,
             "file_max": 4,
@@ -294,7 +303,7 @@
         "tech nuit2": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 575.0,
+                "x": 975.0,
                 "y": 875.0
             },
             "capacite": 4,
@@ -324,13 +333,158 @@
         "centri3": {
             "type": "Centrifugeuse",
             "coords": {
-                "x": 475,
-                "y": 675
+                "x": 875.0,
+                "y": 675.0
             },
             "capacite": 4,
             "file_max": 4,
             "seuil": 1,
-            "protocoles": {}
+            "protocoles": {
+                "centi1": {
+                    "temps": 30,
+                    "type_compatible": "Centrifugeuse"
+                }
+            },
+            "largeur_cases": 1,
+            "hauteur_cases": 1,
+            "tech_requis_poste": false
+        },
+        "frigo 4degrés": {
+            "type": "Réfrigérateur",
+            "coords": {
+                "x": 150.0,
+                "y": 700.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "largeur_cases": 2,
+            "hauteur_cases": 2
+        },
+        "laveur plaque 32 puits": {
+            "type": "Laveur de plaque",
+            "coords": {
+                "x": 650.0,
+                "y": 675.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "largeur_cases": 2,
+            "hauteur_cases": 1
+        },
+        "lecteur HL": {
+            "type": "Lecteur de plaque",
+            "coords": {
+                "x": 450.0,
+                "y": 675.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "largeur_cases": 2,
+            "hauteur_cases": 1
+        },
+        "poste 3": {
+            "type": "Paillasse",
+            "coords": {
+                "x": 650.0,
+                "y": 425.0
+            },
+            "capacite": 5,
+            "file_max": 20,
+            "seuil": 1,
+            "protocoles": {
+                "culot 1": {
+                    "temps": 60,
+                    "type_compatible": "Paillasse"
+                },
+                "surnageant1": {
+                    "temps": 60,
+                    "type_compatible": "Paillasse"
+                }
+            },
+            "largeur_cases": 2,
+            "hauteur_cases": 1,
+            "tech_requis_poste": true,
+            "disponibilite": 100
+        },
+        "poste 4": {
+            "type": "Paillasse",
+            "coords": {
+                "x": 450.0,
+                "y": 425.0
+            },
+            "capacite": 1,
+            "file_max": 20,
+            "seuil": 1,
+            "protocoles": {
+                "culot 1": {
+                    "temps": 30,
+                    "type_compatible": "Paillasse"
+                }
+            },
+            "largeur_cases": 2,
+            "hauteur_cases": 1,
+            "tech_requis_poste": true
+        },
+        "b6": {
+            "nom": "blipka",
+            "experience": 3,
+            "protocoles": {},
+            "type": "TECH_OFFICE",
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "age": 35,
+            "pct_erreur_tech": 0.01,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.01,
+            "taux_recuperation_nuit": 0.15,
+            "capacite_max_tubes": 10,
+            "coords": {
+                "x": 975.0,
+                "y": 875.0
+            }
+        },
+        "b3": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 975.0,
+                "y": 875.0
+            },
+            "capacite": 4,
+            "protocoles": {},
+            "pct_erreur_tech": 0.08,
+            "experience": 1,
+            "age": 30,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.001,
+            "capacite_max_tubes": 10,
+            "nom": "Éthienne",
+            "taux_recuperation_nuit": 0.15
+        },
+        "tech_1": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 475.0,
+                "y": 875.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "nom": "Gabrielle",
+            "experience": 1,
+            "age": 23,
+            "pct_erreur_tech": 0.01,
+            "seuil_charge_fatigue": 0.8,
+            "taux_montee_fatigue": 0.01,
+            "taux_recuperation_nuit": 0.15,
+            "capacite_max_tubes": 20
         }
     },
     "sol": {
@@ -424,7 +578,6 @@
         "11_2": "COUNTER",
         "10_2": "COUNTER",
         "9_2": "COUNTER",
-        "8_2": "COUNTER",
         "7_2": "COUNTER",
         "6_2": "COUNTER",
         "5_2": "COUNTER",
@@ -439,7 +592,6 @@
         "5_1": "COUNTER",
         "6_1": "COUNTER",
         "7_1": "COUNTER",
-        "8_1": "COUNTER",
         "9_1": "COUNTER",
         "10_1": "COUNTER",
         "11_1": "COUNTER",
@@ -468,8 +620,6 @@
         "12_13": "COUNTER",
         "11_13": "COUNTER",
         "10_13": "COUNTER",
-        "8_13": "COUNTER",
-        "7_13": "COUNTER",
         "6_13": "COUNTER",
         "3_13": "COUNTER",
         "1_13": "COUNTER",
@@ -603,9 +753,12 @@
         "22_16": "COUNTER",
         "23_8": "WALL",
         "13_8": "COUNTER",
-        "9_13": "COUNTER",
         "13_13": "COUNTER",
-        "16_13": "COUNTER"
+        "16_13": "COUNTER",
+        "7_13": "COUNTER",
+        "8_13": "COUNTER",
+        "8_2": "COUNTER",
+        "8_1": "COUNTER"
     },
     "catalog_protocoles": {
         "centi1": {
@@ -613,7 +766,7 @@
             "type_compatible": "Centrifugeuse"
         },
         "culot 1": {
-            "temps": 100,
+            "temps": 30,
             "type_compatible": "Paillasse"
         },
         "surnageant1": {
@@ -636,7 +789,7 @@
             "pct_urgent": 0.05,
             "taille_lot_min": 1,
             "taille_lot_max": 5,
-            "duree_validite_min": 260,
+            "duree_validite_min": 1000,
             "duree_validite_max": 380
         }
     },
@@ -672,21 +825,12 @@
         "pause_duree_minutes": 30,
         "garde_trajet_minutes": 20,
         "garde_forfait_heures": 3.0,
-        "garde_samedi": "Rotation auto",
-        "garde_dimanche": "Rotation auto",
-        "garde_feries": "Rotation auto"
+        "garde_samedi": "Personne",
+        "garde_dimanche": "Personne",
+        "garde_feries": "Personne"
     },
     "horaires": {
-        "Arnaud": {
-            "jours": [
-                5,
-                6
-            ],
-            "heure_debut": 7.0,
-            "heure_fin": 17.0,
-            "actif": true
-        },
-        "Carl": {
+        "Éthienne": {
             "jours": [
                 0,
                 1,
@@ -694,11 +838,14 @@
                 3,
                 4
             ],
-            "heure_debut": 16.0,
-            "heure_fin": 24.0,
-            "actif": true
+            "heure_debut": 14.0,
+            "heure_fin": 22.0,
+            "actif": false,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false
         },
-        "tech nuit2": {
+        "Gabrielle": {
             "jours": [
                 0,
                 1,
@@ -706,25 +853,14 @@
                 3,
                 4
             ],
-            "heure_debut": 0.0,
-            "heure_fin": 8.0,
-            "actif": true
-        },
-        "gisele": {
-            "jours": [
-                0,
-                1,
-                5,
-                6
-            ],
-            "heure_debut": 17.0,
-            "heure_fin": 8.0,
-            "pause_debut": 18.0,
-            "pause_fin": 19.0,
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
             "pool_garde": false,
-            "actif": true
+            "actif": false
         },
-        "Marc": {
+        "Gustave": {
             "jours": [
                 0,
                 1,
@@ -737,7 +873,7 @@
             "actif": true,
             "pause_debut": 12.0,
             "pause_fin": 13.0,
-            "pool_garde": true
+            "pool_garde": false
         },
         "Antoine": {
             "jours": [
@@ -752,7 +888,59 @@
             "actif": true,
             "pause_debut": 12.0,
             "pause_fin": 13.0,
-            "pool_garde": true
+            "pool_garde": false
+        },
+        "Arnaud": {
+            "jours": [
+                5,
+                6
+            ],
+            "heure_debut": 7.0,
+            "heure_fin": 17.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false
+        },
+        "Carl": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 16.0,
+            "heure_fin": 24.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false
+        },
+        "gisele": {
+            "jours": [
+                0,
+                1,
+                5,
+                6
+            ],
+            "heure_debut": 17.0,
+            "heure_fin": 8.0,
+            "pause_debut": 18.0,
+            "pause_fin": 19.0,
+            "pool_garde": false,
+            "actif": false
+        },
+        "blipka": {
+            "jours": [
+                5
+            ],
+            "heure_debut": 0.0,
+            "heure_fin": 7.0,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false,
+            "actif": false
         }
     }
 }

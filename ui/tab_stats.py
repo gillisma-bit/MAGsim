@@ -84,6 +84,11 @@ class TabStats:
                         variable=self.show_transit,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
+        self.show_tat_urgents = tk.BooleanVar(value=True)
+        ttk.Checkbutton(checks, text="TAT normal vs urgent",
+                        variable=self.show_tat_urgents,
+                        command=self.refresh).pack(side=tk.LEFT, padx=6)
+
         self.show_errors = tk.BooleanVar(value=True)
         ttk.Checkbutton(checks, text="Erreurs cumulées",
                         variable=self.show_errors,
@@ -369,6 +374,7 @@ class TabStats:
         show_output    = self.show_output_queues.get()
         show_occup     = self.show_occupation.get()
         show_transit   = self.show_transit.get()
+        show_tat_urgents = self.show_tat_urgents.get()
         show_errors    = self.show_errors.get()
         distances      = hist.get("distances_tech", {})
         bienetre_data  = hist.get("bienetre", {})
@@ -379,7 +385,7 @@ class TabStats:
         show_arrivees          = self.show_arrivees.get() and bool(arrivees_data)
 
         # Liste ordonnée des graphiques actifs → index subplot dynamique
-        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_bienetre, show_arrivees]
+        active = [show_queues, show_output, show_occup, show_transit, show_tat_urgents, show_errors, show_bienetre, show_arrivees]
         n_plots = sum(active)
         if n_plots == 0:
             self.fig.clear()
@@ -495,7 +501,7 @@ class TabStats:
             ax4.set_facecolor("#ffffff")
             ax4.set_title("Temps de transit — tubes sortis + tubes en attente + congés maladie",
                           fontsize=11, fontweight="bold", pad=8)
-            ax4.set_ylabel("Durée (min)")
+            ax4.set_ylabel("Durée réelle (min)")
             ax4.set_xlabel("Temps écoulé")
             ax4.xaxis.set_major_formatter(x_fmt)
             ax4.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _fmt_duree(v)))
@@ -585,6 +591,57 @@ class TabStats:
                          ha="center", va="center", transform=ax4.transAxes,
                          fontsize=10, color="#888", style="italic")
             ax4.legend(loc="upper left", fontsize=8, framealpha=0.75)
+
+        # ── Graphique TAT moyen normal vs urgent ───────────────────────
+        tat_normal_roll = list(hist.get("tat_normal_rolling", []))
+        tat_urgent_roll = list(hist.get("tat_urgent_rolling", []))
+
+        if show_tat_urgents:
+            ax_tat = _next_ax()
+            ax_tat.set_facecolor("#ffffff")
+            ax_tat.set_title("TAT moyen — tubes normaux vs tubes urgents (glissante 20 derniers)",
+                             fontsize=11, fontweight="bold", pad=8)
+            ax_tat.set_ylabel("Durée réelle (min)")
+            ax_tat.set_xlabel("Temps écoulé")
+            ax_tat.xaxis.set_major_formatter(x_fmt)
+            ax_tat.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _fmt_duree(v)))
+            ax_tat.grid(True, alpha=0.3, linestyle="--")
+
+            has_normal = any(v is not None for v in tat_normal_roll)
+            has_urgent = any(v is not None for v in tat_urgent_roll)
+
+            if has_normal:
+                t_n, v_n = _filter_none(times[:len(tat_normal_roll)], tat_normal_roll)
+                ax_tat.plot(list(t_n), list(v_n),
+                            color="#3498db", linewidth=2.5, alpha=0.9,
+                            label="Tubes normaux")
+                last_n = next((v for v in reversed(tat_normal_roll) if v is not None), None)
+                if last_n is not None:
+                    ax_tat.axhline(y=last_n, color="#3498db", linestyle=":",
+                                   alpha=0.4, linewidth=1.2)
+                    ax_tat.text(times[-1] if times else 0, last_n,
+                                f"  {_fmt_duree(last_n)}",
+                                va="center", fontsize=9, color="#3498db")
+
+            if has_urgent:
+                t_u, v_u = _filter_none(times[:len(tat_urgent_roll)], tat_urgent_roll)
+                ax_tat.plot(list(t_u), list(v_u),
+                            color="#e74c3c", linewidth=2.5, alpha=0.9,
+                            linestyle="-", label="Tubes urgents")
+                last_u = next((v for v in reversed(tat_urgent_roll) if v is not None), None)
+                if last_u is not None:
+                    ax_tat.axhline(y=last_u, color="#e74c3c", linestyle=":",
+                                   alpha=0.4, linewidth=1.2)
+                    ax_tat.text(times[-1] if times else 0, last_u,
+                                f"  {_fmt_duree(last_u)}",
+                                va="center", fontsize=9, color="#e74c3c")
+
+            if not has_normal and not has_urgent:
+                ax_tat.text(0.5, 0.5,
+                            "En attente — aucun tube n'a encore atteint la SORTIE.",
+                            ha="center", va="center", transform=ax_tat.transAxes,
+                            fontsize=10, color="#888", style="italic")
+            ax_tat.legend(loc="upper right", fontsize=9, framealpha=0.75)
 
         # ── Graphique erreurs cumulées ─────────────────────────────────
         if show_errors:
@@ -958,6 +1015,10 @@ class TabStats:
         if hasattr(self.tab_live, 'btn_reset'):
             self.tab_live.btn_reset.config(state="disabled")
         self.refresh()
+        # Initialiser la conversation si elle n'existe pas encore (race condition au démarrage)
+        if self._ia_conversation is None:
+            self._ia_init_conversation()
+        self._ia_compte_rendu_auto()
 
     def _ia_compte_rendu_auto(self):
         """Envoie automatiquement une demande de compte rendu à l'IA après une sim accélérée.
@@ -976,19 +1037,24 @@ class TabStats:
         stats      = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
         aggregator = getattr(self.tab_live, "aggregator",    None) if self.tab_live else None
 
-        # Construire un bloc de métriques compact (agrégateur en priorité)
+        # Construire un bloc de métriques compact (agrégateur + métriques enrichies)
         from core.ai_assistant import (
             construire_metriques_aggregateur, construire_metriques_block,
             envoyer_messages_github, envoyer_messages,
         )
-        metriques = ""
+        metriques_parties = []
         if aggregator and aggregator.nb_jours >= 1.0:
-            metriques = construire_metriques_aggregateur(aggregator)
-        if not metriques and stats:
-            metriques = construire_metriques_block(self._ia_conversation._config, stats)
-        # Tronquer à 5000 caractères pour rester dans les limites de tokens
-        if len(metriques) > 5000:
-            metriques = metriques[:5000] + "\n… [tronqué pour limite de tokens]"
+            bloc_agg = construire_metriques_aggregateur(aggregator)
+            if bloc_agg:
+                metriques_parties.append(bloc_agg)
+        if stats:
+            bloc_rich = construire_metriques_block(self._ia_conversation._config, stats)
+            if bloc_rich:
+                metriques_parties.append(bloc_rich)
+        metriques = "\n\n".join(metriques_parties)
+        # Tronquer à 6000 caractères pour rester dans les limites de tokens
+        if len(metriques) > 6000:
+            metriques = metriques[:6000] + "\n… [tronqué pour limite de tokens]"
 
         QUESTION = (
             "Fais un compte rendu structuré en trois parties :\n"
@@ -1341,7 +1407,7 @@ class TabStats:
         txt.config(state="disabled")
 
         ttk.Button(dlg, text="Fermer", command=dlg.destroy,
-                   padding=(10, 4)).pack(pady=(0, 10))
+                   padding=(10, 4)).pack(side=tk.BOTTOM, pady=(0, 10))
 
     def _ia_erreur(self, msg):
         self._ia_en_cours = False
