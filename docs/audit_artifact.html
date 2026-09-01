@@ -1,0 +1,620 @@
+<title>Audit MAGsim</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --paper: #eef2f2;
+    --surface: #ffffff;
+    --surface-2: #e4eaea;
+    --border: #cbd6d6;
+    --text: #10201f;
+    --text-2: #45605e;
+    --text-3: #6f8886;
+    --accent: #0f6d66;
+    --accent-strong: #0a4b46;
+    --accent-tint: #d9ece9;
+    --critique: #b3261e;
+    --critique-tint: #fbe6e4;
+    --eleve: #a5590a;
+    --eleve-tint: #fbebd6;
+    --moyen: #8a7a12;
+    --moyen-tint: #f7f0cf;
+    --faible: #3b6e8f;
+    --faible-tint: #e1edf3;
+    --ok: #217a53;
+    --ok-tint: #e0f0e7;
+    --shadow: 0 1px 2px rgba(16,32,31,0.06), 0 8px 24px -12px rgba(16,32,31,0.18);
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    --sans: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper: #0e1615;
+      --surface: #141e1d;
+      --surface-2: #1b2725;
+      --border: #2b3a38;
+      --text: #e8f0ef;
+      --text-2: #a9bfbc;
+      --text-3: #7c9694;
+      --accent: #4fc3b5;
+      --accent-strong: #7ad9cd;
+      --accent-tint: #163330;
+      --critique: #f2897f;
+      --critique-tint: #3a1c19;
+      --eleve: #e3a75f;
+      --eleve-tint: #3a2a12;
+      --moyen: #d8c66a;
+      --moyen-tint: #362f10;
+      --faible: #8fbcda;
+      --faible-tint: #17262f;
+      --ok: #7cd2a6;
+      --ok-tint: #10291d;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -14px rgba(0,0,0,0.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper: #0e1615;
+    --surface: #141e1d;
+    --surface-2: #1b2725;
+    --border: #2b3a38;
+    --text: #e8f0ef;
+    --text-2: #a9bfbc;
+    --text-3: #7c9694;
+    --accent: #4fc3b5;
+    --accent-strong: #7ad9cd;
+    --accent-tint: #163330;
+    --critique: #f2897f;
+    --critique-tint: #3a1c19;
+    --eleve: #e3a75f;
+    --eleve-tint: #3a2a12;
+    --moyen: #d8c66a;
+    --moyen-tint: #362f10;
+    --faible: #8fbcda;
+    --faible-tint: #17262f;
+    --ok: #7cd2a6;
+    --ok-tint: #10291d;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px -14px rgba(0,0,0,0.6);
+  }
+
+  *{ box-sizing: border-box; }
+  body{
+    margin:0;
+    background: var(--paper);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  }
+
+  .wrap{ max-width: 920px; margin: 0 auto; padding: 0 24px 96px; }
+
+  /* ── Header ─────────────────────────────────────────────── */
+  header.hero{
+    border-bottom: 1px solid var(--border);
+    padding: 56px 0 32px;
+    margin-bottom: 8px;
+  }
+  .eyebrow{
+    font-family: var(--mono);
+    font-size: 12.5px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .eyebrow .dot{ width:7px; height:7px; border-radius:50%; background: var(--accent); flex: none; }
+  h1{
+    font-size: clamp(2rem, 4vw, 2.6rem);
+    line-height: 1.12;
+    letter-spacing: -0.01em;
+    margin: 0 0 14px;
+    font-weight: 700;
+    text-wrap: balance;
+    color: var(--text);
+  }
+  .hero-sub{
+    color: var(--text-2);
+    font-size: 1.05rem;
+    max-width: 62ch;
+    margin: 0 0 28px;
+  }
+  .meta-row{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 10px;
+    font-family: var(--mono);
+    font-size: 12.5px;
+    color: var(--text-2);
+  }
+  .meta-row span{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 10px;
+  }
+  .meta-row b{ color: var(--text); font-weight: 600; }
+
+  /* ── Stat strip ─────────────────────────────────────────── */
+  .stats{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 32px 0 0;
+  }
+  .stat{
+    background: var(--surface);
+    padding: 18px 16px;
+  }
+  .stat .n{
+    font-family: var(--mono);
+    font-size: 1.7rem;
+    font-weight: 600;
+    color: var(--accent-strong);
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+  .stat .l{
+    font-size: 12.5px;
+    color: var(--text-3);
+    margin-top: 4px;
+  }
+  @media (max-width: 640px){ .stats{ grid-template-columns: repeat(2,1fr); } }
+
+  /* ── Nav ────────────────────────────────────────────────── */
+  nav.toc{
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border);
+    margin: 40px -24px 40px;
+    padding: 0 24px;
+  }
+  nav.toc ul{
+    list-style: none; margin:0; padding: 12px 0;
+    display: flex; gap: 4px; flex-wrap: wrap;
+    max-width: 920px; margin-inline:auto;
+  }
+  nav.toc a{
+    display:block;
+    font-size: 13px;
+    color: var(--text-2);
+    text-decoration: none;
+    padding: 7px 12px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  nav.toc a:hover, nav.toc a:focus-visible{ background: var(--surface-2); color: var(--text); }
+  nav.toc a:focus-visible{ outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ── Sections ───────────────────────────────────────────── */
+  section{ margin: 64px 0; scroll-margin-top: 68px; }
+  .sec-head{ display:flex; align-items:baseline; gap:14px; margin-bottom:22px; }
+  .sec-num{
+    font-family: var(--mono); font-size: 13px; color: var(--accent);
+    border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px; flex: none;
+  }
+  h2{ font-size: 1.5rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  h3{ font-size: 1.08rem; margin: 0 0 8px; }
+  p{ color: var(--text-2); max-width: 70ch; }
+  p.lead{ color: var(--text); font-size: 1.05rem; }
+  strong{ color: var(--text); }
+  a{ color: var(--accent-strong); }
+  .prose > * + *{ margin-top: 14px; }
+
+  /* ── Tables ─────────────────────────────────────────────── */
+  .table-scroll{ overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
+  table{ border-collapse: collapse; width: 100%; min-width: 480px; font-size: 14.5px; }
+  th, td{ text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  thead th{
+    background: var(--surface-2); color: var(--text-2);
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+  }
+  tbody tr:last-child td{ border-bottom: none; }
+  tbody{ background: var(--surface); }
+  td.mono, th.mono{ font-family: var(--mono); font-size: 13px; }
+  .tag{
+    display:inline-block; font-family: var(--mono); font-size: 11.5px;
+    padding: 2px 8px; border-radius: 5px; background: var(--accent-tint); color: var(--accent-strong);
+    white-space: nowrap;
+  }
+
+  /* ── Test results bar ───────────────────────────────────── */
+  .testbar-card{
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px 26px; box-shadow: var(--shadow);
+  }
+  .testbar-head{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:8px; margin-bottom:16px;}
+  .testbar-head .cmd{ font-family: var(--mono); font-size: 13px; color: var(--text-3); }
+  .testbar{
+    display:flex; height: 34px; border-radius: 7px; overflow:hidden; border:1px solid var(--border);
+  }
+  .testbar .seg{ height:100%; }
+  .seg.pass{ background: var(--ok); }
+  .seg.fail{ background: var(--critique); }
+  .seg.err{ background: var(--eleve); }
+  .testbar-legend{ display:flex; gap:22px; margin-top:14px; flex-wrap:wrap; }
+  .testbar-legend .item{ display:flex; align-items:center; gap:8px; font-size: 13.5px; color: var(--text-2); }
+  .testbar-legend .sw{ width:11px; height:11px; border-radius:3px; flex:none; }
+  .testbar-legend b{ color: var(--text); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .callout{
+    border-left: 3px solid var(--faible); background: var(--faible-tint);
+    padding: 14px 18px; border-radius: 0 8px 8px 0; margin-top:18px; font-size: 14.5px; color: var(--text);
+  }
+  .callout p{ color: var(--text); margin:0; }
+
+  /* ── Finding cards ──────────────────────────────────────── */
+  .finding{
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; box-shadow: var(--shadow); position: relative; overflow: hidden;
+  }
+  .finding + .finding{ margin-top: 16px; }
+  .finding::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:4px; }
+  .finding[data-sev="critique"]::before{ background: var(--critique); }
+  .finding[data-sev="eleve"]::before{ background: var(--eleve); }
+  .finding[data-sev="moyen"]::before{ background: var(--moyen); }
+  .finding[data-sev="faible"]::before{ background: var(--faible); }
+  .f-head{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; margin-bottom:12px; flex-wrap:wrap; }
+  .f-title{ display:flex; align-items:baseline; gap:10px; }
+  .f-title .idx{ font-family: var(--mono); color: var(--text-3); font-size: 14px; }
+  .f-title h3{ margin:0; }
+  .sev-pill{
+    font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 4px 10px; border-radius: 999px; white-space:nowrap; font-weight:600;
+  }
+  .finding[data-sev="critique"] .sev-pill{ background: var(--critique-tint); color: var(--critique); }
+  .finding[data-sev="eleve"] .sev-pill{ background: var(--eleve-tint); color: var(--eleve); }
+  .finding[data-sev="moyen"] .sev-pill{ background: var(--moyen-tint); color: var(--moyen); }
+  .finding[data-sev="faible"] .sev-pill{ background: var(--faible-tint); color: var(--faible); }
+  .finding[data-sev="resolu"]::before{ background: var(--ok); }
+  .finding[data-sev="resolu"] .sev-pill{ background: var(--ok-tint); color: var(--ok); }
+
+  .update-note{
+    background: var(--accent-tint); border: 1px solid var(--accent);
+    border-radius: 10px; padding: 18px 22px; margin: 28px 0 0;
+  }
+  .update-note .u-head{ display:flex; align-items:center; gap:8px; font-family: var(--mono); font-size:12.5px; text-transform:uppercase; letter-spacing:0.06em; color: var(--accent-strong); margin-bottom:10px; }
+  .update-note p{ color: var(--text); margin: 6px 0 0; font-size: 14.5px; max-width: none; }
+  .update-note ul{ margin: 8px 0 0; padding-left: 20px; color: var(--text); font-size: 14.5px; }
+  .update-note li + li{ margin-top: 4px; }
+  .f-loc{ font-family: var(--mono); font-size: 12.5px; color: var(--accent-strong); background: var(--accent-tint); padding: 2px 9px; border-radius: 5px; margin-bottom: 14px; display:inline-block; }
+  .issue-link{
+    font-family: var(--mono); font-size: 12px; text-decoration: none;
+    color: var(--text-2); border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px; white-space: nowrap; transition: color .15s, border-color .15s;
+  }
+  .issue-link:hover, .issue-link:focus-visible{ color: var(--accent-strong); border-color: var(--accent-strong); }
+  .f-grid{ display:grid; grid-template-columns: 84px 1fr; gap: 6px 14px; font-size: 14.5px; }
+  .f-grid dt{ color: var(--text-3); font-size: 12px; text-transform: uppercase; letter-spacing:0.05em; padding-top:2px; }
+  .f-grid dd{ margin:0; color: var(--text-2); }
+  .f-grid dd.risk{ color: var(--text); }
+
+  /* ── Opportunity cards (functional improvements) ──────────── */
+  .opp{
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 22px 24px; box-shadow: var(--shadow);
+  }
+  .opp + .opp{ margin-top: 16px; }
+  .opp .f-title .idx{ color: var(--accent); }
+  .opp h3{ margin: 0 0 12px; }
+  .opp .f-grid dt{ color: var(--text-3); }
+
+  /* ── Onglets grid (functional overview) ─────────────────── */
+  .onglets{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+  @media (max-width: 700px){ .onglets{ grid-template-columns: 1fr; } }
+  .onglet{ background: var(--surface); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+  .onglet .ic{ font-family: var(--mono); font-size:12px; color: var(--accent); text-transform:uppercase; letter-spacing:0.06em; }
+  .onglet h4{ margin: 6px 0 6px; font-size: 15.5px; }
+  .onglet p{ margin:0; font-size: 13.8px; color: var(--text-2); }
+
+  footer{
+    margin-top: 80px; padding-top: 28px; border-top: 1px solid var(--border);
+    color: var(--text-3); font-size: 13px; font-family: var(--mono);
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow"><span class="dot"></span>Audit fonctionnel &amp; technique</div>
+    <h1>MAGsim — jumeau numérique de laboratoire médical</h1>
+    <p class="hero-sub">Lecture complète du code, comparaison des trois branches du dépôt, et vérifications exécutées réellement plutôt que supposées — suite de tests, dépendances, comportement multiplateforme.</p>
+    <div class="meta-row">
+      <span>Date <b>1er sept. 2026</b> · v2</span>
+      <span>Branche <b>refactor/architecture</b> → <b>main</b></span>
+      <span>Commit <b>962eeb1</b></span>
+      <span>Dépôt <b>gillisma-bit/MAGsim</b></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="n">28 455</span><span class="l">lignes Python</span></div>
+      <div class="stat"><span class="n">73</span><span class="l">fichiers .py</span></div>
+      <div class="stat"><span class="n">5 956</span><span class="l">lignes dupliquées, jamais branchées</span></div>
+      <div class="stat"><span class="n">0 %</span><span class="l">de tests en échec</span></div>
+    </div>
+    <div class="update-note">
+      <div class="u-head">↻ Mise à jour depuis la v1 (même jour)</div>
+      <p>Marc-Antoine a poussé <code>962eeb1</code> (« modulariser l'architecture et stabiliser la simulation ») puis fusionné <code>refactor/architecture</code> dans <code>main</code> via la PR&nbsp;#1. Deux points de la v1 changent de statut :</p>
+      <ul>
+        <li>✅ <strong>Divergence des branches</strong> — résolue, <code>main</code> et <code>refactor/architecture</code> sont réconciliées.</li>
+        <li>✅ <strong>Suite de tests</strong> — 102/102 passent désormais (contre 66/102).</li>
+      </ul>
+      <p>Mais le même commit introduit un problème plus sérieux que ce qu'il remplace : voir le point n°1 ci-dessous.</p>
+      <p>Chacun des 10 points de vigilance et des 5 améliorations est maintenant suivi comme <a href="https://github.com/gillisma-bit/MAGsim/issues" target="_blank" rel="noopener">issue GitHub distincte</a> (lien <span class="tag" style="margin:0 2px;">#N</span> sur chaque carte ci-dessous), et le dépôt a désormais un <a href="https://github.com/gillisma-bit/MAGsim/blob/main/README.md" target="_blank" rel="noopener">README.md</a>.</p>
+    </div>
+  </header>
+
+  <nav class="toc" aria-label="Sommaire">
+    <ul>
+      <li><a href="#resume">Résumé</a></li>
+      <li><a href="#fonctionnel">Fonctionnel</a></li>
+      <li><a href="#technique">Technique</a></li>
+      <li><a href="#verif">Vérifications</a></li>
+      <li><a href="#vigilance">Vigilance (10)</a></li>
+      <li><a href="#ameliorations">Améliorations (5)</a></li>
+      <li><a href="#methode">Méthode</a></li>
+    </ul>
+  </nav>
+
+  <section id="resume">
+    <div class="sec-head"><span class="sec-num">00</span><h2>Résumé exécutif</h2></div>
+    <div class="prose">
+      <p class="lead">MAGsim modélise l'arrivée de tubes de prélèvement dans un laboratoire, leur traitement par des machines, et le déplacement de techniciens avec des facteurs humains réalistes — fatigue, expérience, âge, erreurs. L'ambition documentée dépasse largement le simulateur actuel : à terme, un hôpital entier composé de plusieurs « organes » reliés entre eux.</p>
+      <p>Le projet est <strong>plus avancé qu'il n'y paraît</strong> au premier coup d'œil : assistant IA conversationnel capable de modifier la configuration du labo, éditeur de topologie réseau, gestion RH avec quarts de nuit, coordinateur de stress temps réel, interface vocale expérimentale. Un refactor récent (<code>962eeb1</code>) a réglé deux problèmes structurels relevés en v1 — les branches sont réconciliées, la suite de tests passe intégralement — mais en a introduit un plus grave : <strong>~6000 lignes de code neuf, dupliquant la logique existante, ne sont branchées nulle part</strong> dans l'application réelle.</p>
+      <p>Dernier commit : <strong>1er septembre 2026</strong> (<code>962eeb1</code>) — le projet, en pause depuis mai, a repris le jour même de cet audit.</p>
+    </div>
+  </section>
+
+  <section id="fonctionnel">
+    <div class="sec-head"><span class="sec-num">01</span><h2>Vue fonctionnelle</h2></div>
+    <p>L'application de bureau (Tkinter) s'organise en six onglets :</p>
+    <div class="onglets">
+      <div class="onglet"><div class="ic">Réseau</div><h4>🔗 Topologie</h4><p>Positionne le labo et les services externes sur une grille, trace les chemins de transport, dessine des zones de bâtiment.</p></div>
+      <div class="onglet"><div class="ic">Configuration</div><h4>⚙️ Plan &amp; procédures</h4><p>Machines, capacités, catalogue de protocoles, et types de tubes (workflows que suit chaque échantillon).</p></div>
+      <div class="onglet"><div class="ic">Cœur du produit</div><h4>🚀 Simulation live</h4><p>Moteur SimPy : arrivées selon un profil horaire réaliste (loi Gamma), techniciens en pathfinding A*, files et priorités.</p></div>
+      <div class="onglet"><div class="ic">Analyse</div><h4>📊 Goulots</h4><p>Statistiques et graphiques matplotlib — temps de traitement, occupation des machines, détection de goulots.</p></div>
+      <div class="onglet"><div class="ic">Diagnostic</div><h4>🔍 Conseiller</h4><p>Validation automatique de la configuration et insights (couverture horaire, corrélation maladie/attente…).</p></div>
+      <div class="onglet"><div class="ic">Assistant IA</div><h4>🤖 Chat config</h4><p>Répond en langage naturel à un gestionnaire non technique et propose des patchs de configuration applicables.</p></div>
+    </div>
+    <div class="prose" style="margin-top:22px;">
+      <p><strong>Modèle métier :</strong> un tube entre dans le labo avec un <em>type</em> (ex. « Biochimie », « Urgence ») qui fixe sa couleur, son taux d'urgence et son <em>workflow</em>. Un technicien va le chercher et le transporte vers la machine compatible la moins chargée (algorithme « fill-first »), jusqu'à ce que le workflow soit épuisé et que le tube sorte.</p>
+      <p><strong>Vision long terme :</strong> chaque « organe » (labo, bloc chirurgical…) est d'abord modélisé finement puis remplacé par un modèle de substitution une fois sa fidélité validée. Un objet <code>Specimen</code> traçable de bout en bout est identifié par l'auteur comme le prérequis architectural central — non commencé à ce jour (voir Amélioration n°3).</p>
+    </div>
+  </section>
+
+  <section id="technique">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Vue technique</h2></div>
+
+    <h3>Stack</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Composant</th><th>Techno</th><th>Statut</th></tr></thead>
+        <tbody>
+          <tr><td>Interface</td><td class="mono">Python 3 / Tkinter</td><td>Aucune dépendance externe</td></tr>
+          <tr><td>Moteur de simulation</td><td class="mono">SimPy 4</td><td>Événements discrets</td></tr>
+          <tr><td>Config labo</td><td class="mono">data/config_mag.json</td><td>Versionné avec git</td></tr>
+          <tr><td>Données métier</td><td class="mono">SQLite (magsim.db)</td><td>WAL, hors git</td></tr>
+          <tr><td>Graphiques</td><td class="mono">matplotlib</td><td>Intégré à Tkinter</td></tr>
+          <tr><td>Assistant IA</td><td>Ollama (local) / GitHub Models</td><td>Client urllib maison, pas de SDK</td></tr>
+          <tr><td>Voix (prototype)</td><td>Gradio + faster-whisper + edge-tts</td><td>Optionnel, dégrade proprement</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin-top:32px;">État des branches (mis à jour)</h3>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Branche</th><th>Statut</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">main</td><td><span class="tag">✅ réconciliée</span> avec refactor/architecture via la PR #1 (<code>bc37659</code>) — ne diffère plus que des 2 commits de cet audit</td></tr>
+          <tr><td class="mono">branche-machines</td><td>Inchangée, toujours en retard sur les deux autres</td></tr>
+          <tr><td class="mono">refactor/architecture</td><td>Fusionnée dans main</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px;">Aucun <span class="tag">README.md</span>, aucune <span class="tag">LICENSE</span>, aucun <span class="tag">.github/workflows</span> à la racine — toujours vrai après le refactor.</p>
+  </section>
+
+  <section id="verif">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Vérifications empiriques</h2></div>
+    <p>Exécutées dans un environnement Python 3.13 propre — dépendances installées d'après les imports détectés, faute de fichier de dépendances à consulter.</p>
+
+    <div class="testbar-card" style="margin-top:20px;">
+      <div class="testbar-head">
+        <strong>Suite de tests — résultat réel</strong>
+        <span class="cmd">pytest tests/ · 102 tests</span>
+      </div>
+      <div class="testbar">
+        <div class="seg pass" style="width:100%"></div>
+      </div>
+      <div class="testbar-legend">
+        <div class="item"><span class="sw" style="background:var(--ok)"></span>Passent — <b>102</b></div>
+        <div class="item" style="color:var(--text-3)">v1 (même jour, avant 962eeb1) : 66 passent / 22 échouent / 14 erreurs</div>
+      </div>
+      <div class="callout">
+        <p><strong>Nuance importante</strong> : la correction se trouve côté tests (<code>tests/test_priorite_tubes.py::_make_tab</code>, qui patche désormais <code>tk.BooleanVar</code>, <code>tk.Canvas</code>, <code>ttk.Scrollbar/Frame/Button/Label</code> avec des <code>MagicMock()</code>) — pas côté couplage architectural. <code>TabLive</code> reste une classe unique de 3554 lignes qui mélange logique et widgets Tkinter. Le symptôme est réglé (légitimement, c'est suffisant pour la CI), la cause reste entière — voir Vigilance n°1.</p>
+      </div>
+    </div>
+
+    <div class="prose" style="margin-top:20px;">
+      <p><strong><code>root.state('zoomed')</code></strong> (<code>main.py:21</code>, sans garde de plateforme) — testé isolément sur cette machine macOS (Tcl/Tk 9.0.4, Homebrew) : accepté sans erreur. Ce comportement dépend fortement de la distribution Tk installée — les Tk 8.6 plus anciens sur macOS sont connus pour lever une <code>TclError</code>. Rien dans le code ne protège contre ce cas.</p>
+      <p><strong>Installation des dépendances</strong> — réussie sans erreur (simpy, matplotlib, gradio, pytest). Mais Tkinter lui-même n'était <strong>pas disponible</strong> par défaut avec le Python Homebrew de cette machine (<code>ModuleNotFoundError: No module named '_tkinter'</code>) tant que le paquet <code>python-tk</code> n'a pas été installé séparément — un piège d'installation de plus, non documenté nulle part dans le dépôt.</p>
+      <p><strong>Usage réel des fichiers créés par le refactor</strong> — recherche systématique, pour chaque nouveau fichier (<code>ui/_tablive*.py</code>, <code>ui/_tabassistant*.py</code>, <code>ui/_tabconfig*.py</code>, <code>ui/_tabstats*.py</code>, <code>core/ai_providers.py</code>, <code>core/ai_metrics.py</code>, <code>core/ai_patch.py</code>, <code>core/sim/*.py</code>, <code>core/event_bus.py</code>), de son import dans <code>main.py</code> ou dans un module <code>ui/tab_*.py</code> réellement chargé au démarrage — <strong>aucun n'est importé nulle part</strong> hors de ses propres tests. Détail complet au point de vigilance n°1.</p>
+    </div>
+  </section>
+
+  <section id="vigilance">
+    <div class="sec-head"><span class="sec-num">04</span><h2>Dix points de vigilance technique</h2></div>
+    <p style="margin-bottom:22px;">Classés par risque décroissant. Chaque point cite un fichier/ligne précis et une correction concrète.</p>
+
+    <div class="finding" data-sev="critique">
+      <div class="f-head"><div class="f-title"><span class="idx">01</span><h3>Le refactor a dupliqué ~6000 lignes sans les brancher</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Critique</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/3" target="_blank" rel="noopener">#3</a></span></div>
+      <span class="f-loc">ui/_tablive*.py · _tabassistant*.py · _tabconfig*.py · _tabstats*.py</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>962eeb1 crée 15 fichiers présentés comme des mixins (« ne pas instancier directement »), 5956 lignes au total. Vérifié exhaustivement : <code>TabReseau</code> et <code>TabDiagnostic</code> héritent réellement de leurs mixins et ont rétréci (1353→273, →459 lignes) — mais <code>TabLive</code>, <code>TabAssistant</code>, <code>TabConfig</code>, <code>TabStats</code> déclarent toujours zéro classe de base. 51/18/30/29 méthodes de même nom existent en double. Même schéma dans core/ (ai_providers.py, ai_metrics.py, ai_patch.py, 1187 lignes, non importés).</dd>
+        <dt>Risque</dt><dd class="risk">Un correctif appliqué d'un côté ne se propage jamais vers l'autre — la même classe de bug que la duplication x3 déjà documentée dans CORRECTIONS_SIMULATION.md, dix fois plus grande, introduite par le commit censé la corriger.</dd>
+        <dt>Correction</dt><dd>Finir le travail fait sur Réseau/Diagnostic : faire hériter les 4 classes restantes de leurs mixins et supprimer les méthodes dupliquées — ou supprimer les mixins non utilisés.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="eleve">
+      <div class="f-head"><div class="f-title"><span class="idx">02</span><h3>Aucun fichier de dépendances</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Élevé</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/4" target="_blank" rel="noopener">#4</a></span></div>
+      <span class="f-loc">racine du dépôt</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Toujours vrai après le refactor — ni requirements.txt, ni pyproject.toml, ni setup.py, alors que 3 nouveaux modules IA se sont ajoutés à simpy/matplotlib/gradio.</dd>
+        <dt>Risque</dt><dd class="risk">Chaque contributeur doit deviner les dépendances en lisant les imports — comme cet audit a dû le faire.</dd>
+        <dt>Correction</dt><dd>Générer un requirements.txt figeant les versions réelles, en séparant le cœur des dépendances optionnelles (voix).</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="eleve">
+      <div class="f-head"><div class="f-title"><span class="idx">03</span><h3>Aucune CI malgré 12 fichiers de tests</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Élevé</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/5" target="_blank" rel="noopener">#5</a></span></div>
+      <span class="f-loc">.github/workflows/ (absent)</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Toujours vrai. Une CI aurait détecté à l'ouverture de la PR #1 que 5956 lignes neuves ne sont couvertes par aucun import applicatif (un simple pyflakes/vulture l'aurait signalé).</dd>
+        <dt>Risque</dt><dd class="risk">Du code mort de cette taille peut s'accumuler indéfiniment sans qu'aucun signal ne le remonte.</dd>
+        <dt>Correction</dt><dd>Un workflow minimal (pytest tests/ sur chaque push/PR) suffit à empêcher une régression silencieuse de s'aggraver.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="moyen">
+      <div class="f-head"><div class="f-title"><span class="idx">04</span><h3>La documentation d'architecture s'est encore éloignée du code</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Moyen</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/6" target="_blank" rel="noopener">#6</a></span></div>
+      <span class="f-loc">ARCHITECTURE.md</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Ne mentionne toujours ni ai_metrics.py, ni ai_patch.py, ni ai_providers.py, ni les 15 nouveaux fichiers _tablive*/_tabassistant*/_tabconfig*/_tabstats*. L'écart s'est élargi plutôt que résorbé par ce refactor.</dd>
+        <dt>Risque</dt><dd class="risk">Un contributeur qui se fie à la doc part avec un modèle mental faux, de plus en plus éloigné du code réel.</dd>
+        <dt>Correction</dt><dd>Dater/versionner les sections du document, ou le régénérer partiellement depuis une inspection du code.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="moyen">
+      <div class="f-head"><div class="f-title"><span class="idx">05</span><h3>Jeton d'API GitHub stocké en clair</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Moyen</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/7" target="_blank" rel="noopener">#7</a></span></div>
+      <span class="f-loc">data/config_api.json · core/ai_assistant.py</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Inchangé depuis la v1. Le Personal Access Token est sauvegardé en clair. Le fichier est correctement exclu de git — bon réflexe — mais non chiffré sur le disque lui-même.</dd>
+        <dt>Risque</dt><dd class="risk">Un accès local non autorisé (ou une indexation par un anti-virus/backup) expose le token.</dd>
+        <dt>Correction</dt><dd>Chiffrement au repos (ex. cryptography.fernet) — même principe déjà en place ailleurs dans le portfolio de JP.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="faible">
+      <div class="f-head"><div class="f-title"><span class="idx">06</span><h3>Import dupliqué ui.theme toujours présent</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Faible</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/8" target="_blank" rel="noopener">#8</a></span></div>
+      <span class="f-loc">ui/tab_live.py:14-15</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Le refactor a touché ce fichier (imports core.sim.priorite non utilisés en pratique) sans corriger ce doublon trivial déjà relevé en v1 — symbole exact du point n°1 : on ajoute sans nettoyer.</dd>
+        <dt>Risque</dt><dd class="risk">Inoffensif en soi, mais révélateur d'un réflexe d'ajout sans relecture.</dd>
+        <dt>Correction</dt><dd>Supprimer la ligne dupliquée — triviale, une ligne.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="faible">
+      <div class="f-head"><div class="f-title"><span class="idx">07</span><h3>root.state('zoomed') toujours sans garde de plateforme</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Faible</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/9" target="_blank" rel="noopener">#9</a></span></div>
+      <span class="f-loc">main.py:21</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Inchangé. Toujours accepté sans erreur sur cette machine (macOS, Tk 9.0.4) — toujours fragile en théorie selon la distribution Tk de l'utilisateur.</dd>
+        <dt>Risque</dt><dd class="risk">Plantage possible au premier lancement chez un contributeur dont l'installation Python/Tk diffère.</dd>
+        <dt>Correction</dt><dd>Entourer d'un try/except TclError, avec repli sur root.geometry() calculé depuis la résolution d'écran.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="faible">
+      <div class="f-head"><div class="f-title"><span class="idx">08</span><h3>Quatre except: nus (un de plus qu'en v1)</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Faible</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/10" target="_blank" rel="noopener">#10</a></span></div>
+      <span class="f-loc">config_manager.py:22 · tab_config.py:1118 · tab_live.py:386 · _tabconfigworkflow.py:249</span>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Les 3 déjà relevés en v1 (lignes déplacées par le refactor) plus un nouveau, introduit par 962eeb1 dans un fichier qui n'est de toute façon pas branché (n°1) — mais reproduit le même réflexe dans du code neuf.</dd>
+        <dt>Risque</dt><dd class="risk">Attrape aussi KeyboardInterrupt/SystemExit, masque des bugs réels sans trace exploitable.</dd>
+        <dt>Correction</dt><dd>Remplacer par except Exception as e: avec un minimum de log.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="resolu">
+      <div class="f-head"><div class="f-title"><span class="idx">09</span><h3>Résolu — un tiers de la suite de tests échouait</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">✅ Résolu</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/11" target="_blank" rel="noopener">#11</a></span></div>
+      <span class="f-loc">tests/test_priorite_tubes.py::_make_tab</span>
+      <dl class="f-grid">
+        <dt>v1</dt><dd>22 échecs + 14 erreurs sur 102 tests (35 %), tous rattachés à une tk.BooleanVar créée sans root Tk réel.</dd>
+        <dt>Aujourd'hui</dt><dd class="risk">102/102 passent — corrigé côté tests (mocking étendu des widgets Tkinter), pas côté couplage architectural (rejoint le n°1 si on veut une résolution complète).</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="resolu">
+      <div class="f-head"><div class="f-title"><span class="idx">10</span><h3>Résolu — branches divergentes sans document de statut</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">✅ Résolu</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/12" target="_blank" rel="noopener">#12</a></span></div>
+      <span class="f-loc">PR #1 · commit bc37659</span>
+      <dl class="f-grid">
+        <dt>v1</dt><dd>main très en retard sur branche-machines et refactor/architecture, sans qu'aucun document ne l'indique.</dd>
+        <dt>Aujourd'hui</dt><dd class="risk">refactor/architecture fusionnée dans main via la PR #1 — exactement la recommandation qu'ARCHITECTURE.md se donnait à lui-même. branche-machines reste en retard, sans changement.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section id="ameliorations">
+    <div class="sec-head"><span class="sec-num">05</span><h2>Cinq améliorations fonctionnelles</h2></div>
+    <p style="margin-bottom:22px;">Ancrées dans le code existant et dans la propre feuille de route du projet plutôt qu'inventées de toutes pièces.</p>
+
+    <div class="opp">
+      <div class="f-title"><span class="idx">01</span><h3>Sauvegarde et comparaison de scénarios de simulation</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/13" target="_blank" rel="noopener">#13</a></div>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Aucune trace dans le code d'un mécanisme pour nommer, sauvegarder et comparer plusieurs runs.</dd>
+        <dt>Valeur</dt><dd class="risk">Le besoin n°1 d'un outil d'aide à la décision de capacité : comparer « 3 techniciens » vs « 4 » avant de changer quoi que ce soit en vrai.</dd>
+      </dl>
+    </div>
+
+    <div class="opp">
+      <div class="f-title"><span class="idx">02</span><h3>Export de rapport (CSV/PDF) pour gestionnaires non techniques</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/14" target="_blank" rel="noopener">#14</a></div>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Le prompt système de l'assistant IA cible explicitement des « gestionnaires sans compétence technique » — mais aucune fonction d'export n'existe.</dd>
+        <dt>Valeur</dt><dd class="risk">Un résumé de run partageable en réunion correspond directement à la mission déclarée du produit.</dd>
+      </dl>
+    </div>
+
+    <div class="opp">
+      <div class="f-title"><span class="idx">03</span><h3>Prioriser l'objet Specimen</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/15" target="_blank" rel="noopener">#15</a></div>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>ARCHITECTURE.md §8.3 documente sa structure cible et le désigne lui-même comme prérequis aux coûts et à la traçabilité — non commencé.</dd>
+        <dt>Valeur</dt><dd class="risk">La Phase A (coûts) avance sans lui, dans un ordre différent de celui recommandé par les auteurs eux-mêmes.</dd>
+      </dl>
+    </div>
+
+    <div class="opp">
+      <div class="f-title"><span class="idx">04</span><h3>Journal persistant des alertes du CoordonnateurStress</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/16" target="_blank" rel="noopener">#16</a></div>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>Les zones STABLE/VIGILANCE/CRITIQUE sont détectées en temps réel mais rien ne persiste une fois l'app fermée.</dd>
+        <dt>Valeur</dt><dd class="risk">Un historique daté transforme un signal éphémère en argument chiffré pour une décision RH.</dd>
+      </dl>
+    </div>
+
+    <div class="opp">
+      <div class="f-title"><span class="idx">05</span><h3>Lier le coût de la main-d'œuvre au coût par échantillon</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/17" target="_blank" rel="noopener">#17</a></div>
+      <dl class="f-grid">
+        <dt>Constat</dt><dd>dialog_rh.py et tab_horaires.py gèrent déjà les quarts (nuit, garde) ; la Phase A ajoute le coût des consommables — rien ne relie les deux.</dd>
+        <dt>Valeur</dt><dd class="risk">Pour « faut-il un technicien de nuit ? », le coût humain est aussi déterminant que celui des réactifs.</dd>
+      </dl>
+    </div>
+  </section>
+
+  <section id="methode">
+    <div class="sec-head"><span class="sec-num">06</span><h2>Méthode</h2></div>
+    <div class="prose">
+      <p>Exploration initiale en lecture seule via l'API GitHub, sans clonage, pour comparer les trois branches et confirmer l'absence de droits de push avant de choisir une approche.</p>
+      <p>Clonage réel de <code>refactor/architecture</code> dans un environnement local, dépôt Git indépendant, exclu de portfolio-meta via <code>.gitignore</code>.</p>
+      <p>Lecture complète des fichiers Python (20 665 lignes en v1, 28 455 après le refactor du même jour) et des fichiers Markdown de documentation existants.</p>
+      <p>Vérifications empiriques : environnement Python 3.13 propre, dépendances installées depuis les imports détectés, <code>pytest tests/</code> exécuté en entier (102 tests) à deux reprises (avant/après 962eeb1), test isolé de <code>root.state('zoomed')</code>.</p>
+      <p><strong>v2 :</strong> après le commit 962eeb1, vérification systématique et exhaustive, pour chaque nouveau fichier créé par le refactor, de son usage réel par grep des imports dans main.py et les fichiers ui/tab_*.py chargés au démarrage — plutôt que de se fier au nom du commit ou aux docstrings des fichiers eux-mêmes. Comparaison des noms de méthodes entre chaque fichier principal et ses mixins présumés pour quantifier la duplication.</p>
+      <p><strong>Aucun chiffre de ce document n'est une estimation</strong> — tous ont été obtenus par lecture ou exécution directe.</p>
+    </div>
+  </section>
+
+  <footer>MAGsim · audit v2 du 1er septembre 2026 · branche refactor/architecture @ 962eeb1 (fusionnée dans main)</footer>
+</div>
