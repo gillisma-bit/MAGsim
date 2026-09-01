@@ -67,7 +67,7 @@ class MAGsimApp:
         self.notebook.add(self.tab_assistant_frame,  text=" 🤖 ASSISTANT IA ")
 
         # 6. CHARGEMENT DU CONTENU DES ONGLETS
-        self.tab_live       = TabLive(self.tab_live_frame, self.config_manager)
+        self.tab_live       = TabLive(self.tab_live_frame, self.config_manager, self.db_manager)
         self.tab_reseau     = TabReseau(self.tab_reseau_frame, self.config_manager, self)
         self.tab_reseau.tab_live_ref = self.tab_live   # injection pour métriques live
         self.tab_config     = TabConfig(self.tab_config_frame, self.config_manager)

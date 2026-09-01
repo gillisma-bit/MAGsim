@@ -78,6 +78,19 @@ class DBManager:
                     FOREIGN KEY (consommable_id) REFERENCES consommables(id)
                 )
             """)
+            # Journal persistant des épisodes de stress (zone VIGILANCE/CRITIQUE
+            # du CoordonnateurStress) — un épisode s'ouvre à l'entrée en
+            # VIGILANCE ou CRITIQUE et se ferme au retour en STABLE.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS episodes_stress (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    zone_max      TEXT NOT NULL CHECK(zone_max IN ('VIGILANCE','CRITIQUE')),
+                    t_debut       REAL NOT NULL,
+                    t_fin         REAL,
+                    tension_max   REAL NOT NULL,
+                    date_debut    TEXT NOT NULL DEFAULT (datetime('now'))
+                )
+            """)
 
     # ------------------------------------------------------------------
     # CRUD — Consommables
@@ -144,6 +157,48 @@ class DBManager:
                 (categorie,)
             ).fetchall()
         return [Consommable.from_dict(r["id"], dict(r)) for r in rows]
+
+    # ------------------------------------------------------------------
+    # Journal des épisodes de stress
+    # ------------------------------------------------------------------
+    def ouvrir_episode_stress(self, zone: str, tension: float, t_debut: float) -> int:
+        """Ouvre un nouvel épisode (entrée en VIGILANCE ou CRITIQUE). Retourne son id."""
+        with self._connexion() as conn:
+            cur = conn.execute("""
+                INSERT INTO episodes_stress (zone_max, t_debut, tension_max)
+                VALUES (?, ?, ?)
+            """, (zone, t_debut, tension))
+            return cur.lastrowid
+
+    def mettre_a_jour_episode_stress(self, episode_id: int, zone: str, tension: float):
+        """Met à jour la zone la plus haute atteinte et la tension max d'un épisode en cours.
+
+        L'appelant est responsable de ne passer que la zone la plus sévère déjà
+        observée (ex. ne jamais rétrograder CRITIQUE vers VIGILANCE au sein du
+        même épisode) — ce module reste une couche de persistance simple.
+        """
+        with self._connexion() as conn:
+            conn.execute("""
+                UPDATE episodes_stress
+                SET zone_max = ?, tension_max = MAX(tension_max, ?)
+                WHERE id = ?
+            """, (zone, tension, episode_id))
+
+    def cloturer_episode_stress(self, episode_id: int, t_fin: float):
+        """Ferme un épisode de stress (retour en zone STABLE)."""
+        with self._connexion() as conn:
+            conn.execute(
+                "UPDATE episodes_stress SET t_fin = ? WHERE id = ?",
+                (t_fin, episode_id)
+            )
+
+    def get_episodes_stress(self, limit: int = 200) -> list[dict]:
+        """Retourne les derniers épisodes de stress, du plus récent au plus ancien."""
+        with self._connexion() as conn:
+            rows = conn.execute(
+                "SELECT * FROM episodes_stress ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+        return [dict(r) for r in rows]
 
     # ------------------------------------------------------------------
     # Migration depuis JSON (usage unique au premier démarrage)
