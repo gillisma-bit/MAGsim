@@ -292,6 +292,12 @@
   .update-note ul{ margin: 8px 0 0; padding-left: 20px; color: var(--text); font-size: 14.5px; }
   .update-note li + li{ margin-top: 4px; }
   .f-loc{ font-family: var(--mono); font-size: 12.5px; color: var(--accent-strong); background: var(--accent-tint); padding: 2px 9px; border-radius: 5px; margin-bottom: 14px; display:inline-block; }
+  .issue-link{
+    font-family: var(--mono); font-size: 12px; text-decoration: none;
+    color: var(--text-2); border: 1px solid var(--border); border-radius: 999px;
+    padding: 3px 10px; white-space: nowrap; transition: color .15s, border-color .15s;
+  }
+  .issue-link:hover, .issue-link:focus-visible{ color: var(--accent-strong); border-color: var(--accent-strong); }
   .f-grid{ display:grid; grid-template-columns: 84px 1fr; gap: 6px 14px; font-size: 14.5px; }
   .f-grid dt{ color: var(--text-3); font-size: 12px; text-transform: uppercase; letter-spacing:0.05em; padding-top:2px; }
   .f-grid dd{ margin:0; color: var(--text-2); }
@@ -347,6 +353,7 @@
         <li>✅ <strong>Suite de tests</strong> — 102/102 passent désormais (contre 66/102).</li>
       </ul>
       <p>Mais le même commit introduit un problème plus sérieux que ce qu'il remplace : voir le point n°1 ci-dessous.</p>
+      <p>Chacun des 10 points de vigilance et des 5 améliorations est maintenant suivi comme <a href="https://github.com/gillisma-bit/MAGsim/issues" target="_blank" rel="noopener">issue GitHub distincte</a> (lien <span class="tag" style="margin:0 2px;">#N</span> sur chaque carte ci-dessous), et le dépôt a désormais un <a href="https://github.com/gillisma-bit/MAGsim/blob/main/README.md" target="_blank" rel="noopener">README.md</a>.</p>
     </div>
   </header>
 
@@ -454,7 +461,7 @@
     <p style="margin-bottom:22px;">Classés par risque décroissant. Chaque point cite un fichier/ligne précis et une correction concrète.</p>
 
     <div class="finding" data-sev="critique">
-      <div class="f-head"><div class="f-title"><span class="idx">01</span><h3>Le refactor a dupliqué ~6000 lignes sans les brancher</h3></div><span class="sev-pill">Critique</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">01</span><h3>Le refactor a dupliqué ~6000 lignes sans les brancher</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Critique</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/3" target="_blank" rel="noopener">#3</a></span></div>
       <span class="f-loc">ui/_tablive*.py · _tabassistant*.py · _tabconfig*.py · _tabstats*.py</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>962eeb1 crée 15 fichiers présentés comme des mixins (« ne pas instancier directement »), 5956 lignes au total. Vérifié exhaustivement : <code>TabReseau</code> et <code>TabDiagnostic</code> héritent réellement de leurs mixins et ont rétréci (1353→273, →459 lignes) — mais <code>TabLive</code>, <code>TabAssistant</code>, <code>TabConfig</code>, <code>TabStats</code> déclarent toujours zéro classe de base. 51/18/30/29 méthodes de même nom existent en double. Même schéma dans core/ (ai_providers.py, ai_metrics.py, ai_patch.py, 1187 lignes, non importés).</dd>
@@ -464,7 +471,7 @@
     </div>
 
     <div class="finding" data-sev="eleve">
-      <div class="f-head"><div class="f-title"><span class="idx">02</span><h3>Aucun fichier de dépendances</h3></div><span class="sev-pill">Élevé</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">02</span><h3>Aucun fichier de dépendances</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Élevé</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/4" target="_blank" rel="noopener">#4</a></span></div>
       <span class="f-loc">racine du dépôt</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Toujours vrai après le refactor — ni requirements.txt, ni pyproject.toml, ni setup.py, alors que 3 nouveaux modules IA se sont ajoutés à simpy/matplotlib/gradio.</dd>
@@ -474,7 +481,7 @@
     </div>
 
     <div class="finding" data-sev="eleve">
-      <div class="f-head"><div class="f-title"><span class="idx">03</span><h3>Aucune CI malgré 12 fichiers de tests</h3></div><span class="sev-pill">Élevé</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">03</span><h3>Aucune CI malgré 12 fichiers de tests</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Élevé</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/5" target="_blank" rel="noopener">#5</a></span></div>
       <span class="f-loc">.github/workflows/ (absent)</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Toujours vrai. Une CI aurait détecté à l'ouverture de la PR #1 que 5956 lignes neuves ne sont couvertes par aucun import applicatif (un simple pyflakes/vulture l'aurait signalé).</dd>
@@ -484,7 +491,7 @@
     </div>
 
     <div class="finding" data-sev="moyen">
-      <div class="f-head"><div class="f-title"><span class="idx">04</span><h3>La documentation d'architecture s'est encore éloignée du code</h3></div><span class="sev-pill">Moyen</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">04</span><h3>La documentation d'architecture s'est encore éloignée du code</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Moyen</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/6" target="_blank" rel="noopener">#6</a></span></div>
       <span class="f-loc">ARCHITECTURE.md</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Ne mentionne toujours ni ai_metrics.py, ni ai_patch.py, ni ai_providers.py, ni les 15 nouveaux fichiers _tablive*/_tabassistant*/_tabconfig*/_tabstats*. L'écart s'est élargi plutôt que résorbé par ce refactor.</dd>
@@ -494,7 +501,7 @@
     </div>
 
     <div class="finding" data-sev="moyen">
-      <div class="f-head"><div class="f-title"><span class="idx">05</span><h3>Jeton d'API GitHub stocké en clair</h3></div><span class="sev-pill">Moyen</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">05</span><h3>Jeton d'API GitHub stocké en clair</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Moyen</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/7" target="_blank" rel="noopener">#7</a></span></div>
       <span class="f-loc">data/config_api.json · core/ai_assistant.py</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Inchangé depuis la v1. Le Personal Access Token est sauvegardé en clair. Le fichier est correctement exclu de git — bon réflexe — mais non chiffré sur le disque lui-même.</dd>
@@ -504,7 +511,7 @@
     </div>
 
     <div class="finding" data-sev="faible">
-      <div class="f-head"><div class="f-title"><span class="idx">06</span><h3>Import dupliqué ui.theme toujours présent</h3></div><span class="sev-pill">Faible</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">06</span><h3>Import dupliqué ui.theme toujours présent</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Faible</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/8" target="_blank" rel="noopener">#8</a></span></div>
       <span class="f-loc">ui/tab_live.py:14-15</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Le refactor a touché ce fichier (imports core.sim.priorite non utilisés en pratique) sans corriger ce doublon trivial déjà relevé en v1 — symbole exact du point n°1 : on ajoute sans nettoyer.</dd>
@@ -514,7 +521,7 @@
     </div>
 
     <div class="finding" data-sev="faible">
-      <div class="f-head"><div class="f-title"><span class="idx">07</span><h3>root.state('zoomed') toujours sans garde de plateforme</h3></div><span class="sev-pill">Faible</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">07</span><h3>root.state('zoomed') toujours sans garde de plateforme</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Faible</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/9" target="_blank" rel="noopener">#9</a></span></div>
       <span class="f-loc">main.py:21</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Inchangé. Toujours accepté sans erreur sur cette machine (macOS, Tk 9.0.4) — toujours fragile en théorie selon la distribution Tk de l'utilisateur.</dd>
@@ -524,7 +531,7 @@
     </div>
 
     <div class="finding" data-sev="faible">
-      <div class="f-head"><div class="f-title"><span class="idx">08</span><h3>Quatre except: nus (un de plus qu'en v1)</h3></div><span class="sev-pill">Faible</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">08</span><h3>Quatre except: nus (un de plus qu'en v1)</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">Faible</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/10" target="_blank" rel="noopener">#10</a></span></div>
       <span class="f-loc">config_manager.py:22 · tab_config.py:1118 · tab_live.py:386 · _tabconfigworkflow.py:249</span>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Les 3 déjà relevés en v1 (lignes déplacées par le refactor) plus un nouveau, introduit par 962eeb1 dans un fichier qui n'est de toute façon pas branché (n°1) — mais reproduit le même réflexe dans du code neuf.</dd>
@@ -534,7 +541,7 @@
     </div>
 
     <div class="finding" data-sev="resolu">
-      <div class="f-head"><div class="f-title"><span class="idx">09</span><h3>Résolu — un tiers de la suite de tests échouait</h3></div><span class="sev-pill">✅ Résolu</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">09</span><h3>Résolu — un tiers de la suite de tests échouait</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">✅ Résolu</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/11" target="_blank" rel="noopener">#11</a></span></div>
       <span class="f-loc">tests/test_priorite_tubes.py::_make_tab</span>
       <dl class="f-grid">
         <dt>v1</dt><dd>22 échecs + 14 erreurs sur 102 tests (35 %), tous rattachés à une tk.BooleanVar créée sans root Tk réel.</dd>
@@ -543,7 +550,7 @@
     </div>
 
     <div class="finding" data-sev="resolu">
-      <div class="f-head"><div class="f-title"><span class="idx">10</span><h3>Résolu — branches divergentes sans document de statut</h3></div><span class="sev-pill">✅ Résolu</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">10</span><h3>Résolu — branches divergentes sans document de statut</h3></div><span style="display:flex;gap:8px;align-items:center;"><span class="sev-pill">✅ Résolu</span><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/12" target="_blank" rel="noopener">#12</a></span></div>
       <span class="f-loc">PR #1 · commit bc37659</span>
       <dl class="f-grid">
         <dt>v1</dt><dd>main très en retard sur branche-machines et refactor/architecture, sans qu'aucun document ne l'indique.</dd>
@@ -557,7 +564,7 @@
     <p style="margin-bottom:22px;">Ancrées dans le code existant et dans la propre feuille de route du projet plutôt qu'inventées de toutes pièces.</p>
 
     <div class="opp">
-      <div class="f-title"><span class="idx">01</span><h3>Sauvegarde et comparaison de scénarios de simulation</h3></div>
+      <div class="f-title"><span class="idx">01</span><h3>Sauvegarde et comparaison de scénarios de simulation</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/13" target="_blank" rel="noopener">#13</a></div>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Aucune trace dans le code d'un mécanisme pour nommer, sauvegarder et comparer plusieurs runs.</dd>
         <dt>Valeur</dt><dd class="risk">Le besoin n°1 d'un outil d'aide à la décision de capacité : comparer « 3 techniciens » vs « 4 » avant de changer quoi que ce soit en vrai.</dd>
@@ -565,7 +572,7 @@
     </div>
 
     <div class="opp">
-      <div class="f-title"><span class="idx">02</span><h3>Export de rapport (CSV/PDF) pour gestionnaires non techniques</h3></div>
+      <div class="f-title"><span class="idx">02</span><h3>Export de rapport (CSV/PDF) pour gestionnaires non techniques</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/14" target="_blank" rel="noopener">#14</a></div>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Le prompt système de l'assistant IA cible explicitement des « gestionnaires sans compétence technique » — mais aucune fonction d'export n'existe.</dd>
         <dt>Valeur</dt><dd class="risk">Un résumé de run partageable en réunion correspond directement à la mission déclarée du produit.</dd>
@@ -573,7 +580,7 @@
     </div>
 
     <div class="opp">
-      <div class="f-title"><span class="idx">03</span><h3>Prioriser l'objet Specimen</h3></div>
+      <div class="f-title"><span class="idx">03</span><h3>Prioriser l'objet Specimen</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/15" target="_blank" rel="noopener">#15</a></div>
       <dl class="f-grid">
         <dt>Constat</dt><dd>ARCHITECTURE.md §8.3 documente sa structure cible et le désigne lui-même comme prérequis aux coûts et à la traçabilité — non commencé.</dd>
         <dt>Valeur</dt><dd class="risk">La Phase A (coûts) avance sans lui, dans un ordre différent de celui recommandé par les auteurs eux-mêmes.</dd>
@@ -581,7 +588,7 @@
     </div>
 
     <div class="opp">
-      <div class="f-title"><span class="idx">04</span><h3>Journal persistant des alertes du CoordonnateurStress</h3></div>
+      <div class="f-title"><span class="idx">04</span><h3>Journal persistant des alertes du CoordonnateurStress</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/16" target="_blank" rel="noopener">#16</a></div>
       <dl class="f-grid">
         <dt>Constat</dt><dd>Les zones STABLE/VIGILANCE/CRITIQUE sont détectées en temps réel mais rien ne persiste une fois l'app fermée.</dd>
         <dt>Valeur</dt><dd class="risk">Un historique daté transforme un signal éphémère en argument chiffré pour une décision RH.</dd>
@@ -589,7 +596,7 @@
     </div>
 
     <div class="opp">
-      <div class="f-title"><span class="idx">05</span><h3>Lier le coût de la main-d'œuvre au coût par échantillon</h3></div>
+      <div class="f-title"><span class="idx">05</span><h3>Lier le coût de la main-d'œuvre au coût par échantillon</h3><a class="issue-link" href="https://github.com/gillisma-bit/MAGsim/issues/17" target="_blank" rel="noopener">#17</a></div>
       <dl class="f-grid">
         <dt>Constat</dt><dd>dialog_rh.py et tab_horaires.py gèrent déjà les quarts (nuit, garde) ; la Phase A ajoute le coût des consommables — rien ne relie les deux.</dd>
         <dt>Valeur</dt><dd class="risk">Pour « faut-il un technicien de nuit ? », le coût humain est aussi déterminant que celui des réactifs.</dd>
