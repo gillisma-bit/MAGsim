@@ -67,3 +67,36 @@ jobs:
       - name: vulture — détection de code mort (informatif)
         continue-on-error: true
         run: vulture core ui main.py
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer Tk + xvfb (Linux)
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install simpy matplotlib gradio pytest pytest-cov
+
+      # Mesuré le 1er septembre 2026 : 21% de couverture globale — la majorité
+      # du code UI n'est pas couverte (cohérent avec le couplage Tkinter déjà
+      # documenté dans #3/#9 de l'audit). Publié en artefact téléchargeable,
+      # pas en badge externe (nécessiterait un compte Codecov tiers).
+      - name: Lancer les tests avec couverture
+        run: |
+          xvfb-run -a pytest tests/ --cov=core --cov=ui \
+            --cov-report=term-missing --cov-report=html
+
+      - name: Publier le rapport HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: htmlcov/
+          retention-days: 30
