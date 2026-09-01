@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, branche-machines]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # Sur Ubuntu, python3-tk n'est pas installé par défaut — même piège
+      # que celui rencontré sur macOS pendant l'audit du 1er septembre 2026.
+      - name: Installer Tk (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y python3-tk xvfb
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install simpy matplotlib gradio pytest
+
+      - name: Lancer les tests (headless sur Linux)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a pytest tests/ -v
+          else
+            pytest tests/ -v
+          fi
