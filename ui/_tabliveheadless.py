@@ -6,6 +6,8 @@ from collections import deque
 import simpy
 import random
 import json
+import tkinter as tk
+from tkinter import ttk
 from core.sim.sim_io import sauver_stats_sim
 from core.sim.priorite import (
     _score_priorite, _inserer_par_priorite,
@@ -184,6 +186,10 @@ class _TabLiveHeadless:
                 self.running = False
                 self.headless = False
                 sauver_stats_sim(self.stats_history, self.transit_times_raw)
+                if on_complete:
+                    on_complete()
+
+                self.headless = False
                 if on_complete:
                     on_complete()
 
@@ -479,8 +485,11 @@ class _TabLiveHeadless:
                     self.parent.after(0, lambda: lbl_log.config(
                         text=f"Log écrit : {LOG_PATH}"))
                 except Exception as exc_w:
+                    # La variable d'exception est effacée à la sortie du except:,
+                    # donc on doit capturer le message avant le lambda différé.
+                    _msg_erreur_log = f"Erreur écriture log : {exc_w}"
                     self.parent.after(0, lambda: lbl_log.config(
-                        text=f"Erreur écriture log : {exc_w}"))
+                        text=_msg_erreur_log))
 
                 self.parent.after(0, lambda: lbl_status.config(text="Terminé."))
                 self.parent.after(0, lambda: btn_stop.config(

@@ -3,7 +3,30 @@
 Ces méthodes utilisent `self.xxx` défini dans TabConfig.__init__.
 """
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox, colorchooser
+from ui.dialog_rh import FenetreRH
+import ui.theme as theme
+
+# Tailles par défaut (largeur_cases × hauteur_cases) pour chaque type de machine
+# — dupliqué de ui/tab_config.py (même valeurs, cf. commentaire dans
+# _tabassistanttools.py sur le choix d'éviter un import circulaire).
+_TAILLES_DEFAUT = {
+    "Centrifugeuse":    (1, 1),
+    "Automate":         (2, 1),
+    "Paillasse":        (2, 1),
+    "Incubateur":       (1, 1),
+    "Réfrigérateur":    (1, 2),
+    "Laveur de plaque": (2, 1),
+    "Lecteur de plaque":(1, 1),
+    "Bain-marie":       (1, 1),
+    "Agitateur":        (1, 1),
+    "Microscope":       (1, 1),
+    "Hotte":            (3, 1),
+    "Congélateur":      (1, 2),
+    "ENTREE":           (1, 1),
+    "SORTIE":           (1, 1),
+    "REPOS":            (1, 1),
+}
 
 
 class _TabConfigPopup:
@@ -20,8 +43,18 @@ class _TabConfigPopup:
                     return
 
     def ouvrir_popup_machine(self):
-        # Inclut les machines en attente (get_machines_avec_pending)
-        toutes = self.config_manager.get_machines_avec_pending()
+        import traceback as _tb
+        try:
+            self._ouvrir_popup_machine_impl()
+        except Exception as _e:
+            print(f"[TabConfig] ERREUR popup machine : {_e}")
+            _tb.print_exc()
+
+    def _ouvrir_popup_machine_impl(self):
+        # Cherche d'abord dans les machines filtrées, puis dans le dict brut
+        toutes = self.config_manager.get_machines()
+        if self.selected_machine not in toutes:
+            toutes = self.config_manager.data.get("machines", {})
         if self.selected_machine not in toutes:
             return
         m_data = toutes[self.selected_machine]
@@ -121,36 +154,12 @@ class _TabConfigPopup:
 
             frame_bas_s = ttk.Frame(popup)
             frame_bas_s.pack(side=tk.BOTTOM, fill="x", pady=8, padx=20)
-
-            def _supprimer_depuis_popup_s():
-                if messagebox.askyesno("Supprimer", f"Supprimer {self.selected_machine} ?", parent=popup):
-                    popup.destroy()
-                    self.supprimer_selection()
-
-            tk.Button(frame_bas_s, text="🗑️ Supprimer",
-                      bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
-                      font=theme.FONT_BTN_DEL,
-                      activebackground=theme.BTN_DEL_ACT,
-                      relief="flat", cursor="hand2",
-                      command=_supprimer_depuis_popup_s).pack(side="right", padx=(8, 0))
-            ttk.Button(frame_bas_s, text="💾 SAUVER", command=save_stockage, padding=10).pack(side="right")
+            ttk.Button(frame_bas_s, text="💾 SAUVER", command=save_stockage, padding=10).pack()
 
         elif type_m not in _TYPES_SPECIAUX:
             # --- Bouton SAUVER ancré en bas (avant le contenu pour rester visible) ---
             frame_bas = ttk.Frame(popup)
             frame_bas.pack(side=tk.BOTTOM, fill="x", pady=8, padx=20)
-
-            def _supprimer_depuis_popup():
-                if messagebox.askyesno("Supprimer", f"Supprimer {self.selected_machine} ?", parent=popup):
-                    popup.destroy()
-                    self.supprimer_selection()
-
-            tk.Button(frame_bas, text="🗑️ Supprimer",
-                      bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
-                      font=theme.FONT_BTN_DEL,
-                      activebackground=theme.BTN_DEL_ACT,
-                      relief="flat", cursor="hand2",
-                      command=_supprimer_depuis_popup).pack(side="right", padx=(8, 0))
 
             # --- PARAMÈTRES ---
             f_p = ttk.LabelFrame(popup, text="Capacité & Seuil", padding=10)
@@ -219,11 +228,7 @@ class _TabConfigPopup:
                     ent_temps.bind("<FocusOut>", _make_save_temps())
                     ent_temps.bind("<Return>", _make_save_temps())
 
-                    btn_del = tk.Button(f_line, text="✕",
-                                        fg=theme.BTN_DEL_BG, bd=0,
-                                        font=theme.FONT_NOTE,
-                                        activeforeground=theme.BTN_DEL_ACT,
-                                        cursor="hand2",
+                    btn_del = tk.Button(f_line, text="✕", fg="red", bd=0, font=("Arial", 8),
                                         command=lambda n=nom_p: self.delete_proto_confirm(n, popup))
                     btn_del.pack(side="right")
 
@@ -323,7 +328,7 @@ class _TabConfigPopup:
                     self.dessiner_bloc_machine(mx, my, self.selected_machine, type_m, new_larg, new_haut)
                 popup.destroy()
 
-            ttk.Button(frame_bas, text="💾 SAUVER MACHINE", command=save, padding=10).pack(side="right")
+            ttk.Button(frame_bas, text="💾 SAUVER MACHINE", command=save, padding=10).pack()
 
         # --- CAS 2 : L'ENTRÉE ---
         elif type_m == "ENTREE":
@@ -515,6 +520,8 @@ class _TabConfigPopup:
                 continue
             if not m.get("type") or not m.get("coords"):
                 continue
+            if m.get("en_attente_placement"):
+                continue  # sera dessiné dans la zone de dépôt
             self.dessiner_bloc_machine(
                 m["coords"]["x"], m["coords"]["y"], nom, m["type"],
                 m.get("largeur_cases"), m.get("hauteur_cases"))

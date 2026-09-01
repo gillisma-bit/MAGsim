@@ -7,50 +7,109 @@ import tempfile
 import asyncio
 import ctypes
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import threading
 
-# ─── TTS (edge-tts, optionnel) ────────────────────────────────────────────────
+# ─── Disponibilité des dépendances optionnelles ───────────────────────────────
+# Redétectées ici indépendamment de tab_assistant.py (même patron que
+# _tabassistantui.py) pour que ce mixin reste utilisable sans import circulaire.
 try:
     import edge_tts as _edge_tts
+    TTS_OK = True
 except ImportError:
     _edge_tts = None
+    TTS_OK = False
+
+try:
+    import sounddevice as _sd_check  # noqa: F401 — juste pour tester la disponibilité
+    MICRO_OK = True
+except ImportError:
+    MICRO_OK = False
+
+_WHISPER_PROMPT = (
+    "MAGsim, laboratoire, tube, technicien, machine, simulation, navette, urgence, "
+    "centrifugeur, analyseur, automate, protocole, consommable, workflow, priorité, "
+    "spécimen, prélèvement, résultat, délai, file d'attente, zone, trajet"
+)
+
 
 class _TabAssistantTools:
     """Mixin : ne pas instancier directement."""
 
-    def _synthetiser_et_jouer(self, texte: str, voix: str = "fr-FR-DeniseNeural"):
-        """Synthétise le texte et le joue via Windows MCI (thread arrière-plan)."""
+    def _synthetiser_et_jouer(self, texte: str, voix: str = "auto"):
+        """Pipeline TTS phrase par phrase avec interruption VAD."""
+        import re as _re, queue as _q, threading as _thr, time as _time
         t = texte
-        t = re.sub(r'```[\s\S]*?```', ' ', t)
-        t = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', t)
-        t = re.sub(r'^#{1,6}\s+', '', t, flags=re.MULTILINE)
-        t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
-        t = re.sub(r'`([^`]+)`', r'\1', t)
-        t = re.sub(r'^\s*[-*]\s+', '', t, flags=re.MULTILINE)
-        t = re.sub(r'\[M\d+\]', '', t)
-        t = re.sub(r'\(\u2192\s*\[M\d+\]\)', '', t)
-        t = re.sub(r' {2,}', ' ', t).strip()
+        t = _re.sub(r'```[\s\S]*?```', ' ', t)
+        t = _re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', t)
+        t = _re.sub(r'^#{1,6}\s+', '', t, flags=_re.MULTILINE)
+        t = _re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
+        t = _re.sub(r'`([^`]+)`', r'\1', t)
+        t = _re.sub(r'^\s*[-*]\s+', '', t, flags=_re.MULTILINE)
+        t = _re.sub(r'\[M\d+\]', '', t)
+        t = _re.sub(r'\(\u2192\s*\[M\d+\]\)', '', t)
+        t = _re.sub(r' {2,}', ' ', t).strip()
         if not t:
             return
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                chemin = f.name
-            async def _run():
-                comm = _edge_tts.Communicate(t, voix)
-                await comm.save(chemin)
-            asyncio.run(_run())
-            # Lecture via Windows MCI (aucune dépendance supplémentaire)
-            alias = "_magsim_tts"
-            ctypes.windll.winmm.mciSendStringW(
-                f'open "{chemin}" type mpegvideo alias {alias}', None, 0, None)
-            ctypes.windll.winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
-            ctypes.windll.winmm.mciSendStringW(f'close {alias}', None, 0, None)
-        except Exception as exc:
-            print(f"[TTS] {exc}")
+
+        from core.ai_assistant import get_cle_openai
+        cle = get_cle_openai()
+        if not cle and not TTS_OK:
+            return
+
+        # Capturer l'événement courant — permet l'interruption depuis _toggle_micro
+        stop_ev = self._tts_stop_event
+        stop_ev.clear()
+
+        # Découper en groupes de ~100 caractères
+        morceaux = _re.split(r'(?<=[.!?…])\s+', t)
+        groupes, buf = [], ""
+        for m in morceaux:
+            buf = (buf + " " + m).strip() if buf else m
+            if len(buf) >= 80:
+                groupes.append(buf)
+                buf = ""
+        if buf:
+            groupes.append(buf)
+
+        file_q = _q.Queue(maxsize=2)
+        DONE = object()
+
+        def _producer():
+            for g in groupes:
+                if stop_ev.is_set() or not g or not any(c.isalpha() for c in g):
+                    continue
+                try:
+                    ch = self._tts_generer_edge(g) if TTS_OK else self._tts_generer_openai(g, cle)
+                    file_q.put(ch)
+                except Exception as exc:
+                    print(f"[TTS] {exc}")
+            file_q.put(DONE)
+
+        _thr.Thread(target=_producer, daemon=True).start()
+
+        # Démarrer la surveillance VAD uniquement si l'utilisateur l'a activée
+        # (désactivé par défaut — sur haut-parleurs, le micro capte la voix de
+        # l'IA elle-même et déclenche des interruptions intempestives)
+        if MICRO_OK and self._vad_actif.get():
+            _thr.Thread(target=self._vad_pendant_tts, args=(stop_ev,), daemon=True).start()
+
+        # Consumer : lecture non-bloquante avec vérification stop_ev toutes les 50ms
+        while True:
+            item = file_q.get()
+            if item is DONE or stop_ev.is_set():
+                break
+            self._jouer_mp3_mci(item, stop_ev)
+
+        # Si VAD a détecté la voix : démarrer l'enregistrement automatiquement
+        if stop_ev.is_set() and not self._micro_actif:
+            self.parent.after(0, self._demarrer_enregistrement_apres_vad)
 
     def _toggle_micro(self):
         if not self._micro_actif:
+            # Couper immédiatement la TTS en cours
+            self._tts_stop_event.set()
+            self._tts_stop_event = threading.Event()
             try:
                 import sounddevice as sd_
             except Exception as exc:
@@ -97,26 +156,31 @@ class _TabAssistantTools:
                                   {"text": "⬤  Aucune donnée audio capturée", "fg": "#585b70"})
                 return
             audio = np_.concatenate(self._audio_data, axis=0)
-            if audio.shape[0] < 1600:  # < 0.1 s
+            if audio.shape[0] < 1600:
                 self.parent.after(0, self._lbl_statut.config,
                                   {"text": "⬤  Prêt (enregistrement trop court)", "fg": "#585b70"})
                 return
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 chemin_wav = f.name
             import scipy.io.wavfile as _wavfile
-            _wavfile.write(chemin_wav, 16000,
-                           audio.flatten().astype("int16"))
-            # Accéder au modèle Whisper depuis le module parent
-            import sys
-            _tab = sys.modules.get("ui.tab_assistant")
-            whisper = getattr(_tab, "_whisper", None) if _tab else None
-            if whisper is None:
-                self.parent.after(0, self._lbl_statut.config,
-                                  {"text": "⬤  Whisper non disponible", "fg": "#f38ba8"})
-                return
-            segments, _ = whisper.transcribe(chemin_wav, language="fr")
-            texte = " ".join(s.text for s in segments).strip()
-            # Filtrer les artefacts Whisper (silence, ponctuation seule)
+            _wavfile.write(chemin_wav, 16000, audio.flatten().astype("int16"))
+
+            from core.ai_assistant import get_cle_openai
+            # Import différé : évite de recharger le modèle Whisper (lourd) une
+            # deuxième fois — on récupère l'instance déjà chargée par tab_assistant.py.
+            from ui.tab_assistant import _whisper
+            cle = get_cle_openai()
+            if cle:
+                texte = self._transcrire_openai(chemin_wav, cle)
+            elif _whisper:
+                segments, _ = _whisper.transcribe(chemin_wav, language="fr",
+                                                   initial_prompt=_WHISPER_PROMPT)
+                texte = " ".join(s.text for s in segments).strip()
+            else:
+                raise RuntimeError(
+                    "Aucun moteur STT disponible.\n"
+                    "Configurez une clé OpenAI ou installez faster-whisper."
+                )
             if texte and texte not in self._WHISPER_ARTEFACTS and any(c.isalpha() for c in texte):
                 self.parent.after(0, self._injecter_texte, texte)
             else:
@@ -208,14 +272,6 @@ class _TabAssistantTools:
         self.config_manager.data = nouveau_data
         self.config_manager.sauvegarder()
 
-        # Détecter les machines ajoutées en zone de dépôt
-        nouvelles_en_attente = [
-            m.get("nom") or k
-            for k, m in nouveau_data.get("machines", {}).items()
-            if isinstance(m, dict) and m.get("en_attente_placement")
-               and m.get("type") not in ("TECH_OFFICE", "ENTREE", "SORTIE", "REPOS")
-        ]
-
         # Enregistrer dans l'historique de session
         detail = " | ".join(descriptions)
         self._patches_session.append(detail)
@@ -226,26 +282,11 @@ class _TabAssistantTools:
         if ignorees:
             detail_affiche += "\n" + "\n".join(f"⏭ ignoré : {d}" for d in ignorees)
 
-        msg_fin = "Relancez une simulation pour voir l'impact des changements."
-        if nouvelles_en_attente:
-            noms = ", ".join(nouvelles_en_attente)
-            msg_fin = (
-                f"📦  {noms} a été ajouté à la zone de dépôt du plan.\n"
-                "👉  Allez dans l'onglet Configuration, faites glisser l'appareil "
-                "à sa place dans le labo, puis relancez une simulation."
-            )
-
         self._afficher_message_systeme(
-            f"Configuration mise à jour :\n{detail_affiche}\n{msg_fin}",
+            f"Configuration mise à jour :\n{detail_affiche}\n"
+            "Relancez une simulation pour voir l'impact des changements.",
             tag="patch",
         )
-
-        # Rafraîchir le plan de configuration si disponible
-        if getattr(self, "tab_config", None) is not None:
-            try:
-                self.tab_config._refresh_plan_machines()
-            except Exception:
-                pass
 
         self._initialiser_conversation()
         self._masquer_patch()
