@@ -143,6 +143,7 @@ class _TabLiveToggle:
                                   "anticipations": deque(maxlen=2_000)}
             self.aggregator = StatsAggregator()
             self.coordinateur.reset()
+            self._episode_stress_ouvert = None
             # Synchroniser ia_active avec le toggle UI de l'onglet Live
             self.coordinateur.ia_active = self._var_ia.get()
             if not self.headless and hasattr(self, 'lbl_stress'):
@@ -203,6 +204,11 @@ class _TabLiveToggle:
         else:
             # ARRÊT
             self.running = False
+            if self.db_manager is not None and self._episode_stress_ouvert is not None:
+                self.db_manager.cloturer_episode_stress(
+                    self._episode_stress_ouvert["id"], t_fin=self.env.now if self.env else 0.0
+                )
+                self._episode_stress_ouvert = None
             self.turbo = False
             self.btn_turbo.config(text="⚡ ×10")
             self.btn_start.config(text="▶ LANCER SIMULATION")

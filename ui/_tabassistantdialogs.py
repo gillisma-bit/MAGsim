@@ -3,7 +3,8 @@
 Ces méthodes utilisent `self.xxx` défini dans TabAssistant.__init__.
 """
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
+import ui.theme as theme
 
 class _TabAssistantDialogs:
     """Mixin : ne pas instancier directement."""

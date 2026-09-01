@@ -491,6 +491,34 @@ class _TabLiveStats:
                 frequence_base  = frequence_base,
             )
 
+            # ── Journal persistant des épisodes de stress (VIGILANCE/CRITIQUE) ──────
+            # Non-bloquant si aucun DBManager n'est fourni (ex. tests headless).
+            if self.db_manager is not None and not self.headless:
+                if snap.zone == "STABLE":
+                    if self._episode_stress_ouvert is not None:
+                        self.db_manager.cloturer_episode_stress(
+                            self._episode_stress_ouvert["id"], t_fin=snap.t
+                        )
+                        self._episode_stress_ouvert = None
+                else:
+                    if self._episode_stress_ouvert is None:
+                        episode_id = self.db_manager.ouvrir_episode_stress(
+                            zone=snap.zone, tension=snap.tension, t_debut=snap.t
+                        )
+                        self._episode_stress_ouvert = {"id": episode_id, "zone": snap.zone}
+                    else:
+                        # Ne jamais rétrograder la zone au sein d'un même épisode
+                        # (ex. CRITIQUE puis retour à VIGILANCE reste enregistré CRITIQUE).
+                        _ordre = {"VIGILANCE": 1, "CRITIQUE": 2}
+                        zone_max = max(
+                            snap.zone, self._episode_stress_ouvert["zone"],
+                            key=lambda z: _ordre[z]
+                        )
+                        self._episode_stress_ouvert["zone"] = zone_max
+                        self.db_manager.mettre_a_jour_episode_stress(
+                            self._episode_stress_ouvert["id"], zone=zone_max, tension=snap.tension
+                        )
+
             # ── Récupérer une éventuelle réponse IA du tick précédent (mode live) ──
             reponse_async = self.coordinateur.recuperer_reponse_ia()
             if reponse_async:

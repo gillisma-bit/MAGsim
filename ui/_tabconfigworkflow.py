@@ -3,7 +3,7 @@
 Ces méthodes utilisent `self.xxx` défini dans TabConfig.__init__.
 """
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox, colorchooser
 
 
 class _TabConfigWorkflow:

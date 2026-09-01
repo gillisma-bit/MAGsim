@@ -3,8 +3,9 @@
 Ces méthodes utilisent `self.xxx` défini dans TabStats.__init__.
 """
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
 import threading
+import ui.theme as theme
 
 class _TabStatsIA:
     """Mixin : ne pas instancier directement."""
@@ -177,11 +178,11 @@ class _TabStatsIA:
             sel = next((e for e in entrees if _pref(e)), entrees[0])
             self._ia_model_var.set(sel)
             self._ia_appliquer_selection(sel)
-            self._ia_lbl_statut.config(text=f"◎  Prêt  [{self._ia_backend.upper()}]", fg="#a6e3a1")
+            self._ia_lbl_statut.config(text=f"⬤  Prêt  [{self._ia_backend.upper()}]", fg="#a6e3a1")
             self._ia_afficher("Assistant prêt. Posez-moi une question sur la simulation.\n\n", "system")
             self._ia_init_conversation()
         else:
-            self._ia_lbl_statut.config(text="◎  Aucun backend", fg="#f38ba8")
+            self._ia_lbl_statut.config(text="⬤  Aucun backend", fg="#f38ba8")
             self._ia_afficher(
                 "⚠️  Aucun backend disponible.\n"
                 "Option 1 : Installez Ollama (ollama.com)\n"

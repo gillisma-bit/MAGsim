@@ -47,7 +47,7 @@ class _TabAssistantUI:
                  font=theme.FONT_BODY).pack(side=tk.LEFT, padx=(0, 4))
 
         self._combo_model = ttk.Combobox(bar_droite, textvariable=self._model,
-                                         width=32, state="readonly",
+                                         width=18, state="readonly",
                                          font=theme.FONT_BODY)
         self._combo_model.pack(side=tk.LEFT)
         self._combo_model.bind("<<ComboboxSelected>>", self._on_model_change)
@@ -56,12 +56,8 @@ class _TabAssistantUI:
                    command=self._actualiser_modeles,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
 
-        ttk.Button(bar_droite, text="⛯  Token GitHub",
-                   command=self._dialog_token_github,
-                   padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
-
-        ttk.Button(bar_droite, text="🎨  Style IA",
-                   command=self._dialog_style_ia,
+        ttk.Button(bar_droite, text="⛯  Clé OpenAI",
+                   command=self._dialog_token_openai,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
 
         ttk.Button(bar_droite, text="📊  Sources",
@@ -74,6 +70,13 @@ class _TabAssistantUI:
 
         # ── Bouton TTS ──
         self._btn_tts_lbl = "🔊 Voix" if TTS_OK else "🔇 Voix"
+        _tts_btn_ok = TTS_OK
+        if not _tts_btn_ok:
+            try:
+                from core.ai_assistant import openai_disponible as _od2
+                _tts_btn_ok = _od2()
+            except Exception:
+                pass
         self._btn_tts = tk.Checkbutton(
             bar_droite,
             text=self._btn_tts_lbl,
@@ -82,9 +85,21 @@ class _TabAssistantUI:
             bg="#13131f", fg="#89b4fa",
             selectcolor="#313145",
             activebackground="#13131f",
-            state="normal" if TTS_OK else "disabled",
+            state="normal" if _tts_btn_ok else "disabled",
         )
         self._btn_tts.pack(side=tk.LEFT, padx=(10, 0))
+
+        self._btn_vad = tk.Checkbutton(
+            bar_droite,
+            text="🎙️ Auto-interruption",
+            variable=self._vad_actif,
+            font=theme.FONT_BODY,
+            bg="#13131f", fg="#89b4fa",
+            selectcolor="#313145",
+            activebackground="#13131f",
+            state="normal" if MICRO_OK else "disabled",
+        )
+        self._btn_vad.pack(side=tk.LEFT, padx=(10, 0))
 
         tk.Frame(self.parent, bg="#313145", height=1).pack(fill="x")
 
@@ -180,11 +195,16 @@ class _TabAssistantUI:
             relief="flat", bd=0,
             padx=8, pady=4,
             activebackground="#45475a",
-            cursor="hand2" if (MICRO_OK and WHISPER_OK) else "arrow",
-            state="normal" if (MICRO_OK and WHISPER_OK) else "disabled",
+            cursor="hand2" if MICRO_OK else "arrow",
+            state="normal" if MICRO_OK else "disabled",
             command=self._toggle_micro,
         )
         self._btn_micro_widget.grid(row=0, column=1, sticky="nsew", padx=(4, 2), pady=4)
+
+        if MICRO_OK:
+            tk.Label(saisie_frame, text="Ctrl (maintenu) = parler",
+                     font=("Segoe UI", 7), bg="#181825", fg="#585b70"
+                     ).grid(row=1, column=1, sticky="n")
 
         self._btn_envoyer = tk.Button(
             saisie_frame,
