@@ -280,6 +280,17 @@
   .finding[data-sev="eleve"] .sev-pill{ background: var(--eleve-tint); color: var(--eleve); }
   .finding[data-sev="moyen"] .sev-pill{ background: var(--moyen-tint); color: var(--moyen); }
   .finding[data-sev="faible"] .sev-pill{ background: var(--faible-tint); color: var(--faible); }
+  .finding[data-sev="resolu"]::before{ background: var(--ok); }
+  .finding[data-sev="resolu"] .sev-pill{ background: var(--ok-tint); color: var(--ok); }
+
+  .update-note{
+    background: var(--accent-tint); border: 1px solid var(--accent);
+    border-radius: 10px; padding: 18px 22px; margin: 28px 0 0;
+  }
+  .update-note .u-head{ display:flex; align-items:center; gap:8px; font-family: var(--mono); font-size:12.5px; text-transform:uppercase; letter-spacing:0.06em; color: var(--accent-strong); margin-bottom:10px; }
+  .update-note p{ color: var(--text); margin: 6px 0 0; font-size: 14.5px; max-width: none; }
+  .update-note ul{ margin: 8px 0 0; padding-left: 20px; color: var(--text); font-size: 14.5px; }
+  .update-note li + li{ margin-top: 4px; }
   .f-loc{ font-family: var(--mono); font-size: 12.5px; color: var(--accent-strong); background: var(--accent-tint); padding: 2px 9px; border-radius: 5px; margin-bottom: 14px; display:inline-block; }
   .f-grid{ display:grid; grid-template-columns: 84px 1fr; gap: 6px 14px; font-size: 14.5px; }
   .f-grid dt{ color: var(--text-3); font-size: 12px; text-transform: uppercase; letter-spacing:0.05em; padding-top:2px; }
@@ -317,16 +328,25 @@
     <h1>MAGsim — jumeau numérique de laboratoire médical</h1>
     <p class="hero-sub">Lecture complète du code, comparaison des trois branches du dépôt, et vérifications exécutées réellement plutôt que supposées — suite de tests, dépendances, comportement multiplateforme.</p>
     <div class="meta-row">
-      <span>Date <b>1er sept. 2026</b></span>
-      <span>Branche <b>refactor/architecture</b></span>
-      <span>Commit <b>eb1aa79</b></span>
+      <span>Date <b>1er sept. 2026</b> · v2</span>
+      <span>Branche <b>refactor/architecture</b> → <b>main</b></span>
+      <span>Commit <b>962eeb1</b></span>
       <span>Dépôt <b>gillisma-bit/MAGsim</b></span>
     </div>
     <div class="stats">
-      <div class="stat"><span class="n">20 665</span><span class="l">lignes Python</span></div>
-      <div class="stat"><span class="n">46</span><span class="l">fichiers .py</span></div>
-      <div class="stat"><span class="n">3</span><span class="l">branches divergentes</span></div>
-      <div class="stat"><span class="n">35 %</span><span class="l">de tests en échec</span></div>
+      <div class="stat"><span class="n">28 455</span><span class="l">lignes Python</span></div>
+      <div class="stat"><span class="n">73</span><span class="l">fichiers .py</span></div>
+      <div class="stat"><span class="n">5 956</span><span class="l">lignes dupliquées, jamais branchées</span></div>
+      <div class="stat"><span class="n">0 %</span><span class="l">de tests en échec</span></div>
+    </div>
+    <div class="update-note">
+      <div class="u-head">↻ Mise à jour depuis la v1 (même jour)</div>
+      <p>Marc-Antoine a poussé <code>962eeb1</code> (« modulariser l'architecture et stabiliser la simulation ») puis fusionné <code>refactor/architecture</code> dans <code>main</code> via la PR&nbsp;#1. Deux points de la v1 changent de statut :</p>
+      <ul>
+        <li>✅ <strong>Divergence des branches</strong> — résolue, <code>main</code> et <code>refactor/architecture</code> sont réconciliées.</li>
+        <li>✅ <strong>Suite de tests</strong> — 102/102 passent désormais (contre 66/102).</li>
+      </ul>
+      <p>Mais le même commit introduit un problème plus sérieux que ce qu'il remplace : voir le point n°1 ci-dessous.</p>
     </div>
   </header>
 
@@ -346,8 +366,8 @@
     <div class="sec-head"><span class="sec-num">00</span><h2>Résumé exécutif</h2></div>
     <div class="prose">
       <p class="lead">MAGsim modélise l'arrivée de tubes de prélèvement dans un laboratoire, leur traitement par des machines, et le déplacement de techniciens avec des facteurs humains réalistes — fatigue, expérience, âge, erreurs. L'ambition documentée dépasse largement le simulateur actuel : à terme, un hôpital entier composé de plusieurs « organes » reliés entre eux.</p>
-      <p>Le projet est <strong>plus avancé qu'il n'y paraît</strong> au premier coup d'œil : assistant IA conversationnel capable de modifier la configuration du labo, éditeur de topologie réseau, gestion RH avec quarts de nuit, coordinateur de stress temps réel, interface vocale expérimentale. Mais cette ambition s'est construite <strong>sans filet</strong> : aucun fichier de dépendances, aucune CI, un tiers de la suite de tests actuellement en échec, une documentation d'architecture déjà en retard sur le code, et trois branches qui divergent fortement sans qu'aucun document n'indique laquelle fait foi.</p>
-      <p>Dernier commit : <strong>20 mai 2026</strong> — le projet est en pause depuis un peu plus de trois mois à la date de cet audit.</p>
+      <p>Le projet est <strong>plus avancé qu'il n'y paraît</strong> au premier coup d'œil : assistant IA conversationnel capable de modifier la configuration du labo, éditeur de topologie réseau, gestion RH avec quarts de nuit, coordinateur de stress temps réel, interface vocale expérimentale. Un refactor récent (<code>962eeb1</code>) a réglé deux problèmes structurels relevés en v1 — les branches sont réconciliées, la suite de tests passe intégralement — mais en a introduit un plus grave : <strong>~6000 lignes de code neuf, dupliquant la logique existante, ne sont branchées nulle part</strong> dans l'application réelle.</p>
+      <p>Dernier commit : <strong>1er septembre 2026</strong> (<code>962eeb1</code>) — le projet, en pause depuis mai, a repris le jour même de cet audit.</p>
     </div>
   </section>
 
@@ -387,18 +407,18 @@
       </table>
     </div>
 
-    <h3 style="margin-top:32px;">État des trois branches</h3>
+    <h3 style="margin-top:32px;">État des branches (mis à jour)</h3>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Branche</th><th>Fichiers</th><th>Avance sur main</th><th>Statut</th></tr></thead>
+        <thead><tr><th>Branche</th><th>Statut</th></tr></thead>
         <tbody>
-          <tr><td class="mono">main</td><td>23</td><td>—</td><td>Très en retard, ne reflète pas l'état réel</td></tr>
-          <tr><td class="mono">branche-machines</td><td>60</td><td>+36 commits</td><td>Désignée « officielle » par ARCHITECTURE.md</td></tr>
-          <tr><td class="mono">refactor/architecture</td><td><strong>73</strong></td><td><strong>+52 commits</strong></td><td>La plus avancée — absente de la feuille de route documentée</td></tr>
+          <tr><td class="mono">main</td><td><span class="tag">✅ réconciliée</span> avec refactor/architecture via la PR #1 (<code>bc37659</code>) — ne diffère plus que des 2 commits de cet audit</td></tr>
+          <tr><td class="mono">branche-machines</td><td>Inchangée, toujours en retard sur les deux autres</td></tr>
+          <tr><td class="mono">refactor/architecture</td><td>Fusionnée dans main</td></tr>
         </tbody>
       </table>
     </div>
-    <p style="margin-top:14px;">Aucun <span class="tag">README.md</span>, aucune <span class="tag">LICENSE</span>, aucun <span class="tag">.github/workflows</span> à la racine, sur aucune des trois branches.</p>
+    <p style="margin-top:14px;">Aucun <span class="tag">README.md</span>, aucune <span class="tag">LICENSE</span>, aucun <span class="tag">.github/workflows</span> à la racine — toujours vrai après le refactor.</p>
   </section>
 
   <section id="verif">
@@ -408,26 +428,24 @@
     <div class="testbar-card" style="margin-top:20px;">
       <div class="testbar-head">
         <strong>Suite de tests — résultat réel</strong>
-        <span class="cmd">pytest tests/ -v · 102 tests</span>
+        <span class="cmd">pytest tests/ · 102 tests</span>
       </div>
       <div class="testbar">
-        <div class="seg pass" style="width:64.7%"></div>
-        <div class="seg fail" style="width:21.6%"></div>
-        <div class="seg err" style="width:13.7%"></div>
+        <div class="seg pass" style="width:100%"></div>
       </div>
       <div class="testbar-legend">
-        <div class="item"><span class="sw" style="background:var(--ok)"></span>Passent — <b>66</b></div>
-        <div class="item"><span class="sw" style="background:var(--critique)"></span>Échouent — <b>22</b></div>
-        <div class="item"><span class="sw" style="background:var(--eleve)"></span>Erreurs — <b>14</b></div>
+        <div class="item"><span class="sw" style="background:var(--ok)"></span>Passent — <b>102</b></div>
+        <div class="item" style="color:var(--text-3)">v1 (même jour, avant 962eeb1) : 66 passent / 22 échouent / 14 erreurs</div>
       </div>
       <div class="callout">
-        <p><strong>Cause racine unique</strong> pour la quasi-totalité des 36 échecs : <code>ui/tab_live.py:227</code> construit <code>tk.BooleanVar(value=False)</code> dans <code>TabLive.__init__</code>, qui exige une fenêtre Tk réelle. Les tests instancient <code>TabLive(MagicMock(), cm)</code> pour tester la logique sans ouvrir de fenêtre — ce qui plante avec <code>RuntimeError: Too early to create variable: no default root window</code>. Preuve concrète que logique de simulation et widgets Tkinter sont enchevêtrés (voir Vigilance n°1 et n°4).</p>
+        <p><strong>Nuance importante</strong> : la correction se trouve côté tests (<code>tests/test_priorite_tubes.py::_make_tab</code>, qui patche désormais <code>tk.BooleanVar</code>, <code>tk.Canvas</code>, <code>ttk.Scrollbar/Frame/Button/Label</code> avec des <code>MagicMock()</code>) — pas côté couplage architectural. <code>TabLive</code> reste une classe unique de 3554 lignes qui mélange logique et widgets Tkinter. Le symptôme est réglé (légitimement, c'est suffisant pour la CI), la cause reste entière — voir Vigilance n°1.</p>
       </div>
     </div>
 
     <div class="prose" style="margin-top:20px;">
       <p><strong><code>root.state('zoomed')</code></strong> (<code>main.py:21</code>, sans garde de plateforme) — testé isolément sur cette machine macOS (Tcl/Tk 9.0.4, Homebrew) : accepté sans erreur. Ce comportement dépend fortement de la distribution Tk installée — les Tk 8.6 plus anciens sur macOS sont connus pour lever une <code>TclError</code>. Rien dans le code ne protège contre ce cas.</p>
       <p><strong>Installation des dépendances</strong> — réussie sans erreur (simpy, matplotlib, gradio, pytest). Mais Tkinter lui-même n'était <strong>pas disponible</strong> par défaut avec le Python Homebrew de cette machine (<code>ModuleNotFoundError: No module named '_tkinter'</code>) tant que le paquet <code>python-tk</code> n'a pas été installé séparément — un piège d'installation de plus, non documenté nulle part dans le dépôt.</p>
+      <p><strong>Usage réel des fichiers créés par le refactor</strong> — recherche systématique, pour chaque nouveau fichier (<code>ui/_tablive*.py</code>, <code>ui/_tabassistant*.py</code>, <code>ui/_tabconfig*.py</code>, <code>ui/_tabstats*.py</code>, <code>core/ai_providers.py</code>, <code>core/ai_metrics.py</code>, <code>core/ai_patch.py</code>, <code>core/sim/*.py</code>, <code>core/event_bus.py</code>), de son import dans <code>main.py</code> ou dans un module <code>ui/tab_*.py</code> réellement chargé au démarrage — <strong>aucun n'est importé nulle part</strong> hors de ses propres tests. Détail complet au point de vigilance n°1.</p>
     </div>
   </section>
 
@@ -436,12 +454,12 @@
     <p style="margin-bottom:22px;">Classés par risque décroissant. Chaque point cite un fichier/ligne précis et une correction concrète.</p>
 
     <div class="finding" data-sev="critique">
-      <div class="f-head"><div class="f-title"><span class="idx">01</span><h3>Un tiers de la suite de tests échoue réellement</h3></div><span class="sev-pill">Critique</span></div>
-      <span class="f-loc">ui/tab_live.py:227</span>
+      <div class="f-head"><div class="f-title"><span class="idx">01</span><h3>Le refactor a dupliqué ~6000 lignes sans les brancher</h3></div><span class="sev-pill">Critique</span></div>
+      <span class="f-loc">ui/_tablive*.py · _tabassistant*.py · _tabconfig*.py · _tabstats*.py</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>22 échecs + 14 erreurs sur 102 tests, tous rattachés à une <code>tk.BooleanVar</code> créée sans root Tk réel lors de l'instanciation de <code>TabLive</code> dans les tests.</dd>
-        <dt>Risque</dt><dd class="risk">Une régression réelle peut passer inaperçue — la suite « rouge » en permanence désensibilise à l'échec.</dd>
-        <dt>Correction</dt><dd>Extraire l'état simulable hors du constructeur, ou fournir un root Tk minimal (caché) dans les fixtures de test.</dd>
+        <dt>Constat</dt><dd>962eeb1 crée 15 fichiers présentés comme des mixins (« ne pas instancier directement »), 5956 lignes au total. Vérifié exhaustivement : <code>TabReseau</code> et <code>TabDiagnostic</code> héritent réellement de leurs mixins et ont rétréci (1353→273, →459 lignes) — mais <code>TabLive</code>, <code>TabAssistant</code>, <code>TabConfig</code>, <code>TabStats</code> déclarent toujours zéro classe de base. 51/18/30/29 méthodes de même nom existent en double. Même schéma dans core/ (ai_providers.py, ai_metrics.py, ai_patch.py, 1187 lignes, non importés).</dd>
+        <dt>Risque</dt><dd class="risk">Un correctif appliqué d'un côté ne se propage jamais vers l'autre — la même classe de bug que la duplication x3 déjà documentée dans CORRECTIONS_SIMULATION.md, dix fois plus grande, introduite par le commit censé la corriger.</dd>
+        <dt>Correction</dt><dd>Finir le travail fait sur Réseau/Diagnostic : faire hériter les 4 classes restantes de leurs mixins et supprimer les méthodes dupliquées — ou supprimer les mixins non utilisés.</dd>
       </dl>
     </div>
 
@@ -449,89 +467,87 @@
       <div class="f-head"><div class="f-title"><span class="idx">02</span><h3>Aucun fichier de dépendances</h3></div><span class="sev-pill">Élevé</span></div>
       <span class="f-loc">racine du dépôt</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Ni requirements.txt, ni pyproject.toml, ni setup.py, alors que le code importe simpy, matplotlib, gradio, et en option faster-whisper/edge-tts.</dd>
+        <dt>Constat</dt><dd>Toujours vrai après le refactor — ni requirements.txt, ni pyproject.toml, ni setup.py, alors que 3 nouveaux modules IA se sont ajoutés à simpy/matplotlib/gradio.</dd>
         <dt>Risque</dt><dd class="risk">Chaque contributeur doit deviner les dépendances en lisant les imports — comme cet audit a dû le faire.</dd>
         <dt>Correction</dt><dd>Générer un requirements.txt figeant les versions réelles, en séparant le cœur des dépendances optionnelles (voix).</dd>
       </dl>
     </div>
 
     <div class="finding" data-sev="eleve">
-      <div class="f-head"><div class="f-title"><span class="idx">03</span><h3>Un refactor testé mais jamais branché</h3></div><span class="sev-pill">Élevé</span></div>
-      <span class="f-loc">core/sim/machine.py · core/sim/tube.py · core/event_bus.py</span>
+      <div class="f-head"><div class="f-title"><span class="idx">03</span><h3>Aucune CI malgré 12 fichiers de tests</h3></div><span class="sev-pill">Élevé</span></div>
+      <span class="f-loc">.github/workflows/ (absent)</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Bien conçus et testés en isolation (tests/sim/) — mais aucun fichier applicatif ne les importe. Le moteur réel (tab_live.py) n'y fait jamais référence.</dd>
-        <dt>Risque</dt><dd class="risk">Deux architectures de simulation coexistent ; le nom même de la branche laisse croire que ce chantier est terminé.</dd>
-        <dt>Correction</dt><dd>Brancher EventBus dans tab_live.py, ou documenter explicitement que ce chantier est en pause et pourquoi.</dd>
-      </dl>
-    </div>
-
-    <div class="finding" data-sev="eleve">
-      <div class="f-head"><div class="f-title"><span class="idx">04</span><h3>TabLive : 3552 lignes, une seule classe, 66 méthodes</h3></div><span class="sev-pill">Élevé</span></div>
-      <span class="f-loc">ui/tab_live.py</span>
-      <dl class="f-grid">
-        <dt>Constat</dt><dd>Logique SimPy, pathfinding, rendu canvas et état UI mélangés dans une seule classe.</dd>
-        <dt>Risque</dt><dd class="risk">Contredit le « principe de séparation » qu'ARCHITECTURE.md énonce lui-même — cause directe des 36 tests en échec (n°1).</dd>
-        <dt>Correction</dt><dd>Extraire progressivement la logique pure vers core/, sur le modèle déjà appliqué à sim_utils.py et coordinateur_stress.py.</dd>
+        <dt>Constat</dt><dd>Toujours vrai. Une CI aurait détecté à l'ouverture de la PR #1 que 5956 lignes neuves ne sont couvertes par aucun import applicatif (un simple pyflakes/vulture l'aurait signalé).</dd>
+        <dt>Risque</dt><dd class="risk">Du code mort de cette taille peut s'accumuler indéfiniment sans qu'aucun signal ne le remonte.</dd>
+        <dt>Correction</dt><dd>Un workflow minimal (pytest tests/ sur chaque push/PR) suffit à empêcher une régression silencieuse de s'aggraver.</dd>
       </dl>
     </div>
 
     <div class="finding" data-sev="moyen">
-      <div class="f-head"><div class="f-title"><span class="idx">05</span><h3>La documentation d'architecture a déjà dérivé du code</h3></div><span class="sev-pill">Moyen</span></div>
-      <span class="f-loc">ARCHITECTURE.md · README_PROCEDURES.md</span>
+      <div class="f-head"><div class="f-title"><span class="idx">04</span><h3>La documentation d'architecture s'est encore éloignée du code</h3></div><span class="sev-pill">Moyen</span></div>
+      <span class="f-loc">ARCHITECTURE.md</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Décrit une app à 4 onglets sans Réseau ni Assistant IA (elle en a 6) ; ne mentionne ni ai_assistant.py, ni event_bus.py, ni core/sim/. Même symptôme pour un paramètre "priorite" déjà supprimé du code.</dd>
-        <dt>Risque</dt><dd class="risk">Un contributeur qui se fie à la doc part avec un modèle mental faux.</dd>
+        <dt>Constat</dt><dd>Ne mentionne toujours ni ai_metrics.py, ni ai_patch.py, ni ai_providers.py, ni les 15 nouveaux fichiers _tablive*/_tabassistant*/_tabconfig*/_tabstats*. L'écart s'est élargi plutôt que résorbé par ce refactor.</dd>
+        <dt>Risque</dt><dd class="risk">Un contributeur qui se fie à la doc part avec un modèle mental faux, de plus en plus éloigné du code réel.</dd>
         <dt>Correction</dt><dd>Dater/versionner les sections du document, ou le régénérer partiellement depuis une inspection du code.</dd>
       </dl>
     </div>
 
     <div class="finding" data-sev="moyen">
-      <div class="f-head"><div class="f-title"><span class="idx">06</span><h3>Trois branches divergentes sans document de statut</h3></div><span class="sev-pill">Moyen</span></div>
-      <span class="f-loc">main · branche-machines · refactor/architecture</span>
-      <dl class="f-grid">
-        <dt>Constat</dt><dd>main (23 fichiers) très en retard sur les deux autres ; ARCHITECTURE.md ne mentionne même pas l'existence de refactor/architecture.</dd>
-        <dt>Risque</dt><dd class="risk">Un nouveau contributeur clone main par défaut et se retrouve avec une version largement obsolète, sans signal d'alerte.</dd>
-        <dt>Correction</dt><dd>Un README.md à la racine (absent des trois branches) qui indique la branche active et pourquoi les autres existent.</dd>
-      </dl>
-    </div>
-
-    <div class="finding" data-sev="moyen">
-      <div class="f-head"><div class="f-title"><span class="idx">07</span><h3>Jeton d'API GitHub stocké en clair</h3></div><span class="sev-pill">Moyen</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">05</span><h3>Jeton d'API GitHub stocké en clair</h3></div><span class="sev-pill">Moyen</span></div>
       <span class="f-loc">data/config_api.json · core/ai_assistant.py</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Le token Personal Access Token est sauvegardé en clair. Le fichier est correctement exclu de git — bon réflexe — mais non chiffré sur le disque lui-même.</dd>
+        <dt>Constat</dt><dd>Inchangé depuis la v1. Le Personal Access Token est sauvegardé en clair. Le fichier est correctement exclu de git — bon réflexe — mais non chiffré sur le disque lui-même.</dd>
         <dt>Risque</dt><dd class="risk">Un accès local non autorisé (ou une indexation par un anti-virus/backup) expose le token.</dd>
         <dt>Correction</dt><dd>Chiffrement au repos (ex. cryptography.fernet) — même principe déjà en place ailleurs dans le portfolio de JP.</dd>
       </dl>
     </div>
 
-    <div class="finding" data-sev="eleve">
-      <div class="f-head"><div class="f-title"><span class="idx">08</span><h3>Aucune CI malgré 12 fichiers de tests</h3></div><span class="sev-pill">Élevé</span></div>
-      <span class="f-loc">.github/workflows/ (absent)</span>
+    <div class="finding" data-sev="faible">
+      <div class="f-head"><div class="f-title"><span class="idx">06</span><h3>Import dupliqué ui.theme toujours présent</h3></div><span class="sev-pill">Faible</span></div>
+      <span class="f-loc">ui/tab_live.py:14-15</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Pas de workflow GitHub Actions, sur aucune des trois branches.</dd>
-        <dt>Risque</dt><dd class="risk">Les 35 % d'échecs du n°1 auraient été visibles à chaque push depuis longtemps — là, ils dorment jusqu'à un pytest manuel.</dd>
-        <dt>Correction</dt><dd>Un workflow minimal (pytest tests/ sur chaque push/PR) suffit à empêcher une régression silencieuse de s'aggraver.</dd>
+        <dt>Constat</dt><dd>Le refactor a touché ce fichier (imports core.sim.priorite non utilisés en pratique) sans corriger ce doublon trivial déjà relevé en v1 — symbole exact du point n°1 : on ajoute sans nettoyer.</dd>
+        <dt>Risque</dt><dd class="risk">Inoffensif en soi, mais révélateur d'un réflexe d'ajout sans relecture.</dd>
+        <dt>Correction</dt><dd>Supprimer la ligne dupliquée — triviale, une ligne.</dd>
       </dl>
     </div>
 
     <div class="finding" data-sev="faible">
-      <div class="f-head"><div class="f-title"><span class="idx">09</span><h3>root.state('zoomed') sans garde de plateforme</h3></div><span class="sev-pill">Faible</span></div>
+      <div class="f-head"><div class="f-title"><span class="idx">07</span><h3>root.state('zoomed') toujours sans garde de plateforme</h3></div><span class="sev-pill">Faible</span></div>
       <span class="f-loc">main.py:21</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Appelé sans try/except ni test de plateforme. Vérifié sur cette machine (macOS, Tk 9.0.4) : accepté — mais fragile selon la version de Tk installée.</dd>
-        <dt>Risque</dt><dd class="risk">Plantage au premier lancement chez un contributeur dont l'installation Python/Tk diffère, sans message utile.</dd>
+        <dt>Constat</dt><dd>Inchangé. Toujours accepté sans erreur sur cette machine (macOS, Tk 9.0.4) — toujours fragile en théorie selon la distribution Tk de l'utilisateur.</dd>
+        <dt>Risque</dt><dd class="risk">Plantage possible au premier lancement chez un contributeur dont l'installation Python/Tk diffère.</dd>
         <dt>Correction</dt><dd>Entourer d'un try/except TclError, avec repli sur root.geometry() calculé depuis la résolution d'écran.</dd>
       </dl>
     </div>
 
     <div class="finding" data-sev="faible">
-      <div class="f-head"><div class="f-title"><span class="idx">10</span><h3>Trois except: nus</h3></div><span class="sev-pill">Faible</span></div>
-      <span class="f-loc">config_manager.py:190 · tab_config.py:1233 · tab_live.py:386</span>
+      <div class="f-head"><div class="f-title"><span class="idx">08</span><h3>Quatre except: nus (un de plus qu'en v1)</h3></div><span class="sev-pill">Faible</span></div>
+      <span class="f-loc">config_manager.py:22 · tab_config.py:1118 · tab_live.py:386 · _tabconfigworkflow.py:249</span>
       <dl class="f-grid">
-        <dt>Constat</dt><dd>Avalent toute erreur — dont deux sans même logguer, contrairement à un except Exception voisin dans le même fichier.</dd>
+        <dt>Constat</dt><dd>Les 3 déjà relevés en v1 (lignes déplacées par le refactor) plus un nouveau, introduit par 962eeb1 dans un fichier qui n'est de toute façon pas branché (n°1) — mais reproduit le même réflexe dans du code neuf.</dd>
         <dt>Risque</dt><dd class="risk">Attrape aussi KeyboardInterrupt/SystemExit, masque des bugs réels sans trace exploitable.</dd>
-        <dt>Correction</dt><dd>Remplacer par except Exception as e: avec un minimum de log — cohérent avec le style déjà utilisé ailleurs dans le même fichier.</dd>
+        <dt>Correction</dt><dd>Remplacer par except Exception as e: avec un minimum de log.</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="resolu">
+      <div class="f-head"><div class="f-title"><span class="idx">09</span><h3>Résolu — un tiers de la suite de tests échouait</h3></div><span class="sev-pill">✅ Résolu</span></div>
+      <span class="f-loc">tests/test_priorite_tubes.py::_make_tab</span>
+      <dl class="f-grid">
+        <dt>v1</dt><dd>22 échecs + 14 erreurs sur 102 tests (35 %), tous rattachés à une tk.BooleanVar créée sans root Tk réel.</dd>
+        <dt>Aujourd'hui</dt><dd class="risk">102/102 passent — corrigé côté tests (mocking étendu des widgets Tkinter), pas côté couplage architectural (rejoint le n°1 si on veut une résolution complète).</dd>
+      </dl>
+    </div>
+
+    <div class="finding" data-sev="resolu">
+      <div class="f-head"><div class="f-title"><span class="idx">10</span><h3>Résolu — branches divergentes sans document de statut</h3></div><span class="sev-pill">✅ Résolu</span></div>
+      <span class="f-loc">PR #1 · commit bc37659</span>
+      <dl class="f-grid">
+        <dt>v1</dt><dd>main très en retard sur branche-machines et refactor/architecture, sans qu'aucun document ne l'indique.</dd>
+        <dt>Aujourd'hui</dt><dd class="risk">refactor/architecture fusionnée dans main via la PR #1 — exactement la recommandation qu'ARCHITECTURE.md se donnait à lui-même. branche-machines reste en retard, sans changement.</dd>
       </dl>
     </div>
   </section>
@@ -586,11 +602,12 @@
     <div class="prose">
       <p>Exploration initiale en lecture seule via l'API GitHub, sans clonage, pour comparer les trois branches et confirmer l'absence de droits de push avant de choisir une approche.</p>
       <p>Clonage réel de <code>refactor/architecture</code> dans un environnement local, dépôt Git indépendant, exclu de portfolio-meta via <code>.gitignore</code>.</p>
-      <p>Lecture complète des 46 fichiers Python (20 665 lignes) et des cinq fichiers Markdown de documentation existants.</p>
-      <p>Vérifications empiriques : environnement Python 3.13 propre, dépendances installées depuis les imports détectés, <code>pytest tests/ -v</code> exécuté en entier (102 tests), test isolé de <code>root.state('zoomed')</code>.</p>
+      <p>Lecture complète des fichiers Python (20 665 lignes en v1, 28 455 après le refactor du même jour) et des fichiers Markdown de documentation existants.</p>
+      <p>Vérifications empiriques : environnement Python 3.13 propre, dépendances installées depuis les imports détectés, <code>pytest tests/</code> exécuté en entier (102 tests) à deux reprises (avant/après 962eeb1), test isolé de <code>root.state('zoomed')</code>.</p>
+      <p><strong>v2 :</strong> après le commit 962eeb1, vérification systématique et exhaustive, pour chaque nouveau fichier créé par le refactor, de son usage réel par grep des imports dans main.py et les fichiers ui/tab_*.py chargés au démarrage — plutôt que de se fier au nom du commit ou aux docstrings des fichiers eux-mêmes. Comparaison des noms de méthodes entre chaque fichier principal et ses mixins présumés pour quantifier la duplication.</p>
       <p><strong>Aucun chiffre de ce document n'est une estimation</strong> — tous ont été obtenus par lecture ou exécution directe.</p>
     </div>
   </section>
 
-  <footer>MAGsim · audit du 1er septembre 2026 · branche refactor/architecture @ eb1aa79</footer>
+  <footer>MAGsim · audit v2 du 1er septembre 2026 · branche refactor/architecture @ 962eeb1 (fusionnée dans main)</footer>
 </div>
