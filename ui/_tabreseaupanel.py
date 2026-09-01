@@ -2,12 +2,14 @@
 
 Ces méthodes utilisent `self.xxx` défini dans TabReseau.__init__.
 """
+import math
 import tkinter as tk
 from tkinter import ttk
 from typing import Optional
 from ui._reseau_const import (
     GRID, M_PAR_CASE, VITESSE_M_MIN,
-    MODE_NORMAL, SNAP_MAGNET,
+    MODE_NORMAL, MODE_CHEMIN, MODE_EDIT_WP, SNAP_MAGNET,
+    BOX_W, BOX_H, LABO_H,
     _dist_chemin, _duree_depuis_chemin,
 )
 

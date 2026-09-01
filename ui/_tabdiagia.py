@@ -5,6 +5,13 @@ from tkinter import ttk
 import threading
 import ui.theme as theme
 
+# ── Niveaux de sévérité (dupliqués de tab_diagnostic.py — évite un import
+# circulaire ; ce mixin doit rester utilisable indépendamment) ────────────────
+INFO    = "info"
+WARN    = "warn"
+ERROR   = "error"
+OK      = "ok"
+
 
 class _TabDiagIA:
     """Mixin : ne pas instancier directement."""

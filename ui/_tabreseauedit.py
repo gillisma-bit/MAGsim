@@ -2,13 +2,15 @@
 
 Ces méthodes utilisent `self.xxx` défini dans TabReseau.__init__.
 """
+import math
 import tkinter as tk
-from tkinter import simpledialog
+from tkinter import simpledialog, colorchooser
 from typing import Optional
 from ui._reseau_const import (
     GRID, M_PAR_CASE, VITESSE_M_MIN,
     MODE_NORMAL, MODE_CHEMIN, MODE_ZONE, MODE_EDIT_WP, MODE_EDIT_ZONE,
     SNAP_MAGNET, PALETTE_ZONES,
+    BOX_W, BOX_H, LABO_H, COULEUR_TEXTE,
     _snap, _dist_chemin, _duree_depuis_chemin,
 )
 
