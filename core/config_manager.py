@@ -19,8 +19,8 @@ class ConfigManager:
                     if "catalog_protocoles" not in data: data["catalog_protocoles"] = {}
                     if "types_tubes" not in data: data["types_tubes"] = {}
                     return data
-            except:
-                print("Erreur de lecture JSON. Création d'une config neuve.")
+            except Exception as e:
+                print(f"Erreur de lecture JSON ({e}). Création d'une config neuve.")
         
         return {
             "nom_projet": "Nouveau Projet MAGsim",

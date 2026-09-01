@@ -12,7 +12,6 @@ from core.technician import TechnicianState
 from core.stats_aggregator import StatsAggregator
 from core.coordinateur_stress import CoordonnateurStress
 import ui.theme as theme
-import ui.theme as theme
 
 # ─── Pont simulation → Gradio ────────────────────────────────────────────────
 _LAST_SIM_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "last_sim.json")
@@ -383,8 +382,8 @@ class TabLive:
                 c, r = map(int, cle.split("_"))
                 color = "#ecf0f1" if type_s == "COUNTER" else "#2c3e50"
                 self.canvas.create_rectangle(c*50, r*50, (c+1)*50, (r+1)*50, fill=color, outline="#d0d0d0")
-            except:
-                pass
+            except ValueError as e:
+                print(f"[sol] Tuile ignorée, clé malformée '{cle}': {e}")
         
         # Machines
         _COULEURS_MACHINE = {

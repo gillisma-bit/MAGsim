@@ -1115,8 +1115,8 @@ class TabConfig:
         couleur = self.ent_couleur.get()
         try:
             self.canvas_color.config(bg=couleur)
-        except:
-            pass
+        except tk.TclError:
+            pass  # couleur invalide/incomplète pendant la saisie — ignoré volontairement
 
     def sauver_workflow(self):
         """Sauvegarde le workflow du type en cours d'édition"""
