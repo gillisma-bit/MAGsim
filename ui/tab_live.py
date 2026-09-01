@@ -103,11 +103,13 @@ def _inserer_par_anciennete(queue, tube, now=None, mult_urgence=1.0, mult_validi
 
 
 class TabLive:
-    def __init__(self, parent, config_manager):
+    def __init__(self, parent, config_manager, db_manager=None):
         self.parent = parent
         self.config_manager = config_manager
+        self.db_manager = db_manager  # optionnel — persiste le journal des épisodes de stress
         self.env = None
         self.running = False
+        self._episode_stress_ouvert = None  # {"id", "zone", "tension_max"} pendant VIGILANCE/CRITIQUE
         self.technicians = []  # Liste des TechnicianState actifs (un par TECH_OFFICE)
 
         # Indicateurs visuels de machines en travail
@@ -1149,6 +1151,7 @@ class TabLive:
                                   "anticipations": deque(maxlen=2_000)}
             self.aggregator = StatsAggregator()
             self.coordinateur.reset()
+            self._episode_stress_ouvert = None
             # Synchroniser ia_active avec le toggle UI de l'onglet Live
             self.coordinateur.ia_active = self._var_ia.get()
             if not self.headless and hasattr(self, 'lbl_stress'):
@@ -1209,6 +1212,11 @@ class TabLive:
         else:
             # ARRÊT
             self.running = False
+            if self.db_manager is not None and self._episode_stress_ouvert is not None:
+                self.db_manager.cloturer_episode_stress(
+                    self._episode_stress_ouvert["id"], t_fin=self.env.now if self.env else 0.0
+                )
+                self._episode_stress_ouvert = None
             self.turbo = False
             self.btn_turbo.config(text="⚡ ×10")
             self.btn_start.config(text="▶ LANCER SIMULATION")
@@ -2031,6 +2039,34 @@ class TabLive:
                 profil_horaire  = profil_horaire,
                 frequence_base  = frequence_base,
             )
+
+            # ── Journal persistant des épisodes de stress (VIGILANCE/CRITIQUE) ──────
+            # Non-bloquant si aucun DBManager n'est fourni (ex. tests headless).
+            if self.db_manager is not None and not self.headless:
+                if snap.zone == "STABLE":
+                    if self._episode_stress_ouvert is not None:
+                        self.db_manager.cloturer_episode_stress(
+                            self._episode_stress_ouvert["id"], t_fin=snap.t
+                        )
+                        self._episode_stress_ouvert = None
+                else:
+                    if self._episode_stress_ouvert is None:
+                        episode_id = self.db_manager.ouvrir_episode_stress(
+                            zone=snap.zone, tension=snap.tension, t_debut=snap.t
+                        )
+                        self._episode_stress_ouvert = {"id": episode_id, "zone": snap.zone}
+                    else:
+                        # Ne jamais rétrograder la zone au sein d'un même épisode
+                        # (ex. CRITIQUE puis retour à VIGILANCE reste enregistré CRITIQUE).
+                        _ordre = {"VIGILANCE": 1, "CRITIQUE": 2}
+                        zone_max = max(
+                            snap.zone, self._episode_stress_ouvert["zone"],
+                            key=lambda z: _ordre[z]
+                        )
+                        self._episode_stress_ouvert["zone"] = zone_max
+                        self.db_manager.mettre_a_jour_episode_stress(
+                            self._episode_stress_ouvert["id"], zone=zone_max, tension=snap.tension
+                        )
 
             # ── Récupérer une éventuelle réponse IA du tick précédent (mode live) ──
             reponse_async = self.coordinateur.recuperer_reponse_ia()
