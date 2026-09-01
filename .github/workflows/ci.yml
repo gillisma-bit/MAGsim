@@ -39,3 +39,31 @@ jobs:
           else
             pytest tests/ -v
           fi
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer ruff et vulture
+        run: pip install ruff vulture
+
+      # Non-bloquant pour l'instant : le code existant remonte 227 avertissements
+      # pyflakes/erreurs (mesuré le 1er septembre 2026) — les rendre bloquants
+      # demanderait un nettoyage préalable hors du périmètre de ce ticket (#18).
+      # Objectif : visibilité immédiate sur les PR, sans bloquer personne.
+      - name: ruff check (informatif)
+        continue-on-error: true
+        run: ruff check .
+
+      # vulture est l'outil qui aurait détecté #3 (les 15 classes mixins
+      # jamais héritées, ~6000 lignes) — vérifié : à confiance par défaut (60%),
+      # il les repère toutes, plus core/event_bus.py et core/sim/machine.py.
+      # Non-bloquant pour la même raison que ruff ci-dessus.
+      - name: vulture — détection de code mort (informatif)
+        continue-on-error: true
+        run: vulture core ui main.py
