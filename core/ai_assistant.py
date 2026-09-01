@@ -29,6 +29,8 @@ _SYSTEM_PROMPT = """Tu es l'assistant IA de MAGsim, un logiciel de simulation de
 
 IMPORTANT : Tu dois TOUJOURS répondre en français, sans exception. Même si le gestionnaire t'écrit en anglais, réponds en français. N'utilise jamais l'anglais dans tes réponses.
 
+RÈGLE ABSOLUE — FOCUS SUR LA DEMANDE ACTUELLE : Réponds TOUJOURS au DERNIER message envoyé par le gestionnaire, et uniquement à celui-ci. Ignore tout exemple, résumé de session passée ou historique fourni ci-dessous s'il ne correspond pas exactement à ce dernier message — ces éléments ne servent qu'à calibrer ton style, jamais à deviner ou remplacer la question posée. Si le dernier message change de sujet par rapport à ce qui précède, suis ce changement sans hésiter.
+
 Ton rôle est d'aider les gestionnaires — sans aucune compétence technique — à maintenir la configuration du labo à jour, en leur posant des questions simples en langage naturel et en leur proposant des mises à jour concrètes basées sur les données réelles de simulation.
 
 Ton de communication : tu es décontracte, parfois légèrement humoristique, mais TOUJOURS rigoureux sur les chiffres et les faits. Pense à un collègue expert qui vulgarise avec humour — la blague ne remplace jamais le diagnostic, elle l'accompagne. Ne sois jamais lourd ni forcé dans l'humour : une touche suffit.
@@ -113,59 +115,6 @@ RÈGLES pour le recrutement :
 - Toujours récapituler AVANT de générer le patch : "Voilà ce que je vais créer : [nom], [jours en français], [heures]. C'est bon pour vous ?"
 - Adapter pct_erreur_tech selon l'expérience : niveau 1→0.08, 2→0.05, 3→0.02, 4→0.01, 5→0.005
 
-== AJOUTER UN APPAREIL ==
-Si le gestionnaire parle d'ajouter, acheter, installer un appareil, un équipement ou une machine, APPLIQUE ce protocole, UNE QUESTION À LA FOIS :
-
-ÉTAPE 1 — Type : propose la liste et demande lequel. Types disponibles :
-  Centrifugeuse, Automate, Paillasse, Incubateur, Réfrigérateur, Laveur de plaque, Lecteur de plaque, Bain-marie, Agitateur, Microscope, Hotte, Congélateur
-ÉTAPE 2 — Nom : "Comment appellera-t-on cet appareil ?" (ex: "Centri 2", "Automate Beckman")
-ÉTAPE 3 — Capacité : "Combien d'échantillons peut-il traiter en même temps ?" — propose une valeur standard selon le type :
-  Centrifugeuse→4, Automate→10, Paillasse→5, Incubateur→6, Réfrigérateur→50, Laveur→8, Lecteur→1, Bain-marie→12, Agitateur→6, Microscope→1, Hotte→3, Congélateur→100
-ÉTAPE 4 — Technicien requis : uniquement pour Paillasse et Microscope. "Un technicien doit-il être présent pour utiliser cet appareil ?" (oui/non)
-ÉTAPE 5 — Récapitulatif + patch : résume et génère le bloc config_patch.
-
-RÈGLES pour l'ajout d'appareil :
-- Une fois créé, l'appareil sera visible dans la zone de dépôt (coin supérieur droit du plan) : l'utilisateur n'a plus qu'à le faire glisser à sa place dans le labo
-- TOUJOURS inclure "en_attente_placement": true dans le patch — c'est ce qui le fait apparaître dans la zone de dépôt
-- TOUJOURS mettre coords à {"x": 2750, "y": 125} — position fixe de la zone de dépôt
-- Ne jamais demander l'emplacement dans le labo (c'est le gestionnaire qui le glisse à la main)
-- Ne pas demander les protocoles maintenant : ça se configure ensuite dans l'onglet Configuration
-- Utiliser les valeurs standard ci-dessous pour les champs techniques (ne pas les mentionner à l'utilisateur) :
-  Centrifugeuse : tmep=200, tmr=0.5, delai_max=240, file_max=10, larg=1, haut=1, prefixe_cle="ct"
-  Automate      : tmep=6000, tmr=60, delai_max=360, file_max=20, larg=2, haut=1, prefixe_cle="au"
-  Paillasse     : tmep=12, tmr=0.33, delai_max=300, file_max=25, larg=2, haut=1, prefixe_cle="pa"
-  Incubateur    : tmep=180, tmr=1, delai_max=480, file_max=6, larg=1, haut=1, prefixe_cle="ic"
-  Réfrigérateur : tmep=0, tmr=0, delai_max=9999, file_max=50, larg=1, haut=2, prefixe_cle="rf"
-  Laveur de plaque: tmep=60, tmr=2, delai_max=300, file_max=8, larg=2, haut=1, prefixe_cle="lv"
-  Lecteur de plaque: tmep=10, tmr=0.5, delai_max=180, file_max=1, larg=1, haut=1, prefixe_cle="lc"
-  Bain-marie    : tmep=120, tmr=1, delai_max=480, file_max=12, larg=1, haut=1, prefixe_cle="bm"
-  Agitateur     : tmep=30, tmr=0.5, delai_max=240, file_max=6, larg=1, haut=1, prefixe_cle="ag"
-  Microscope    : tmep=5, tmr=0.1, delai_max=120, file_max=1, larg=1, haut=1, prefixe_cle="ms"
-  Hotte         : tmep=0, tmr=0, delai_max=9999, file_max=3, larg=3, haut=1, prefixe_cle="ht"
-  Congélateur   : tmep=0, tmr=0, delai_max=9999, file_max=100, larg=1, haut=2, prefixe_cle="cg"
-- Pour la CLE_NOUVELLE : utilise le préfixe du type + prochain numéro (ex: si ct1 existe → ct2). Regarde la section "Clés techniques".
-
-Exemple de patch pour une Centrifugeuse nommée "Centri 2" avec capacité 6 :
-```config_patch
-[
-  {"chemin": "machines.ct2", "valeur": {
-      "type": "Centrifugeuse",
-      "coords": {"x": 2750, "y": 125},
-      "capacite": 6,
-      "protocoles": {},
-      "seuil": 1,
-      "file_max": 10,
-      "tmep": 200.0,
-      "tmr": 0.5,
-      "delai_max_avant_degrad": 240,
-      "tech_requis_poste": false,
-      "largeur_cases": 1,
-      "hauteur_cases": 1,
-      "en_attente_placement": true
-  }}
-]
-```
-
 == Règles de conduite ==
 - Réponds TOUJOURS en français, c'est obligatoire
 - Ton décontracté et légèrement humoristique si l'occasion s'y prête, mais les chiffres et analyses restent TOUJOURS précis et complets
@@ -202,7 +151,9 @@ Structure attendue de la réponse :
 
 {metriques}
 
-{memoire}"""
+{memoire}
+
+{profil_md}"""
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Constructeur de contexte
@@ -1088,43 +1039,16 @@ def set_cle_github(cle):
     sauver_config_api(cfg)
 
 
-_STYLE_DEFAUT = {
-    "reponses_courtes":    False,   # Réponses brèves et directes
-    "questions_proactives": True,   # Poser une question en fin de réponse
-}
+def get_cle_openai():
+    """Retourne la clé API OpenAI ou None."""
+    return lire_config_api().get("openai", {}).get("cle", "").strip() or None
 
-def get_style_ia():
-    """Retourne les préférences de style de l'IA (dict)."""
-    sauvegarde = lire_config_api().get("style_ia", {})
-    style = dict(_STYLE_DEFAUT)
-    style.update(sauvegarde)
-    return style
 
-def set_style_ia(style):
-    """Sauvegarde les préférences de style dans data/config_api.json."""
+def set_cle_openai(cle):
+    """Enregistre la clé OpenAI dans data/config_api.json."""
     cfg = lire_config_api()
-    cfg["style_ia"] = {k: bool(v) for k, v in style.items()}
+    cfg.setdefault("openai", {})["cle"] = cle.strip()
     sauver_config_api(cfg)
-
-def _construire_regles_style():
-    """Génère les règles de style à injecter dans le prompt système."""
-    style = get_style_ia()
-    regles = []
-    if style.get("reponses_courtes"):
-        regles.append(
-            "STYLE — CONCISION : Tes réponses doivent être COURTES et DIRECTES. "
-            "Va droit au but : état + chiffre clé + action. "
-            "Maximum 3-4 phrases sauf si on te demande un détail. "
-            "Pas d'introduction, pas de conclusion, pas de formule de politesse."
-        )
-    if not style.get("questions_proactives", True):
-        regles.append(
-            "STYLE — QUESTIONS : Ne pose JAMAIS de question en fin de réponse, "
-            "sauf si l'utilisateur te le demande explicitement ou si une information "
-            "absolument indispensable manque pour effectuer l'action demandée. "
-            "Si tu as toutes les infos, agis directement sans demander confirmation."
-        )
-    return "\n".join(regles)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1145,15 +1069,32 @@ GITHUB_MODELES = [
     "meta/llama-3.3-70b-instruct",      # high tier — 50 req/j, 128k ctx
     "meta/llama-4-scout-17b-16e-instruct",  # high tier — 50 req/j, 10M ctx
     "deepseek/deepseek-v3-0324",        # high tier — 50 req/j, 128k ctx
-    "mistral-ai/mistral-medium-2505",   # high tier — 50 req/j, 128k ctx  ← plus gros Mistral dispo
     "mistral-ai/mistral-small-2503",    # low tier  — 150 req/j, 128k ctx
     "microsoft/phi-4",                  # low tier  — 150 req/j, 16k ctx
+]
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Client OpenAI  (API officielle — successeur de GitHub Models)
+# ─────────────────────────────────────────────────────────────────────────────
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+
+OPENAI_MODELES = [
+    "gpt-4o-mini",   # le moins cher, très capable  ← défaut recommandé
+    "gpt-4o",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "o4-mini",
 ]
 
 
 def github_models_disponible():
     """Vérifie qu'un token GitHub est enregistré (sans test réseau)."""
     return bool(get_cle_github())
+
+
+def openai_disponible():
+    """Vérifie qu'une clé OpenAI est enregistrée (sans test réseau)."""
+    return bool(get_cle_openai())
 
 
 def envoyer_messages_github(messages, model="openai/gpt-4.1-mini",
@@ -1247,20 +1188,19 @@ def envoyer_messages_github(messages, model="openai/gpt-4.1-mini",
                 detail = corps
             # Erreurs transitoires : retry (5xx, 429 rate-limit)
             if e.code in (429, 500, 502, 503, 504) and _tentative < _max_retries - 1:
-                import time as _time
-                if e.code == 429:
-                    # Respecter le header Retry-After si présent, sinon backoff long
-                    retry_after = e.headers.get("Retry-After") or e.headers.get("x-ratelimit-reset-after")
-                    try:
-                        _delai = max(15, int(retry_after))
-                    except (TypeError, ValueError):
-                        _delai = 15 * (2 ** _tentative)  # 15s, 30s, 60s
-                else:
-                    _delai = 2 ** _tentative  # 1s, 2s, 4s pour les 5xx
+                _delai = 2 ** _tentative  # 1s, 2s, 4s
                 _derniere_erreur = ConnectionError(f"Erreur GitHub Models ({e.code}) : {detail}")
+                import time as _time
                 _time.sleep(_delai)
                 reponse_complete.clear()
                 continue
+            # 410 = service retiré définitivement — inutile de réessayer
+            if e.code == 410:
+                raise ConnectionError(
+                    "GitHub Models a été retiré définitivement (erreur 410).\n"
+                    "Utilisez Ollama en local ou configurez un autre fournisseur IA.\n"
+                    f"Détail : {detail}"
+                ) from e
             raise ConnectionError(f"Erreur GitHub Models ({e.code}) : {detail}") from e
         except urllib.error.URLError as e:
             raise ConnectionError(
@@ -1269,6 +1209,94 @@ def envoyer_messages_github(messages, model="openai/gpt-4.1-mini",
             ) from e
 
     return "".join(reponse_complete)
+
+
+def envoyer_messages_openai(messages, model="gpt-4o-mini",
+                            on_token=None, timeout=120, stop_event=None,
+                            _max_retries=3):
+    """Envoie une conversation à l'API OpenAI (format OpenAI compatible)."""
+    cle = get_cle_openai()
+    if not cle:
+        raise ConnectionError(
+            "Clé API OpenAI manquante.\n"
+            "Saisissez votre clé dans Paramètres → Assistant IA → Clé OpenAI."
+        )
+
+    payload = {
+        "model":       model,
+        "max_tokens":  2048,
+        "messages":    messages,
+        "stream":      on_token is not None,
+        "temperature": 0,
+    }
+    body = json.dumps(payload).encode("utf-8")
+
+    reponse_complete = []
+    _derniere_erreur = None
+    for _tentative in range(max(1, _max_retries)):
+        _req = urllib.request.Request(
+            OPENAI_URL,
+            data=body,
+            headers={
+                "Content-Type":  "application/json",
+                "Authorization": f"Bearer {cle}",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(_req, timeout=timeout) as resp:
+                if on_token:
+                    for ligne in resp:
+                        if stop_event and stop_event.is_set():
+                            break
+                        ligne_str = ligne.decode("utf-8").strip()
+                        if not ligne_str.startswith("data:"):
+                            continue
+                        data_str = ligne_str[len("data:"):].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+                        choices = chunk.get("choices")
+                        if not choices:
+                            continue
+                        token = choices[0].get("delta", {}).get("content", "")
+                        if token:
+                            reponse_complete.append(token)
+                            on_token(token)
+                else:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    choices = data.get("choices")
+                    if not choices:
+                        raise ValueError(
+                            f"Réponse inattendue d'OpenAI : {json.dumps(data)[:300]}"
+                        )
+                    return choices[0]["message"]["content"]
+            break
+        except urllib.error.HTTPError as e:
+            corps = e.read().decode("utf-8", errors="replace")
+            try:
+                detail = json.loads(corps).get("error", {}).get("message", corps)
+            except Exception:
+                detail = corps
+            if e.code in (429, 500, 502, 503, 504) and _tentative < _max_retries - 1:
+                import time as _time
+                _delai = 15 * (2 ** _tentative) if e.code == 429 else 2 ** _tentative
+                _derniere_erreur = ConnectionError(f"Erreur OpenAI ({e.code}) : {detail}")
+                _time.sleep(_delai)
+                reponse_complete.clear()
+                continue
+            raise ConnectionError(f"Erreur OpenAI ({e.code}) : {detail}") from e
+        except urllib.error.URLError as e:
+            raise ConnectionError(
+                f"Impossible de joindre l'API OpenAI.\n"
+                f"Vérifiez votre connexion Internet.\nDétail : {e}"
+            ) from e
+
+    return "".join(reponse_complete)
+
 
 def extraire_patch(texte):
     """Extrait le bloc JSON patch de la réponse LLM.
@@ -1368,6 +1396,113 @@ def appliquer_patch(config_data, patch_ops):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+#  Extraction automatique de traits du profil gestionnaire (apprentissage)
+# ─────────────────────────────────────────────────────────────────────────────
+
+_SECTIONS_PROFIL_PROMPT = (
+    "Style de communication, Humour, Centres d'intérêt, "
+    "Contexte professionnel, Préférences diverses"
+)
+
+_PROMPT_EXTRACTION_PROFIL = f"""Tu analyses UN échange entre un gestionnaire de laboratoire et un assistant IA.
+Ton rôle : détecter si cet échange révèle un TRAIT DURABLE et RÉUTILISABLE sur le gestionnaire
+(pas une information ponctuelle sur le labo) : sa façon de communiquer, son humour, ses centres
+d'intérêt, son contexte professionnel, ou une préférence stable.
+
+Catégories possibles : {_SECTIONS_PROFIL_PROMPT}
+
+Réponds STRICTEMENT dans un des deux formats suivants, rien d'autre :
+- "RIEN" si aucun trait durable n'est identifiable dans cet échange
+- "CATÉGORIE: note courte (max 15 mots)" si un trait est identifié
+
+Exemples valides :
+"Style de communication: préfère les réponses courtes et directes"
+"Humour: apprécie les blagues et un ton léger"
+"Contexte professionnel: gère un petit labo de 3 techniciens"
+
+Ne réponds JAMAIS avec plusieurs lignes. Ne commente pas ta réponse."""
+
+
+def extraire_trait_profil(question_utilisateur, reponse_assistant, model, backend):
+    """Appelle le LLM pour extraire (au plus) un trait durable de l'échange.
+    Retourne (section, note) ou None si rien d'exploitable ou d'erreur.
+    Conçu pour être appelé dans un thread d'arrière-plan (ne lève jamais d'exception).
+    """
+    from core.ai_memory import ajouter_note_profil
+
+    try:
+        messages = [
+            {"role": "system", "content": _PROMPT_EXTRACTION_PROFIL},
+            {"role": "user", "content": (
+                f"Gestionnaire : {question_utilisateur[:400]}\n"
+                f"Assistant : {reponse_assistant[:400]}"
+            )},
+        ]
+        if backend == "github":
+            reponse = envoyer_messages_github(messages, model=model, timeout=30, _max_retries=1)
+        elif backend == "openai":
+            reponse = envoyer_messages_openai(messages, model=model, timeout=30, _max_retries=1)
+        else:
+            reponse = envoyer_messages(messages, model=model, timeout=30)
+
+        reponse = reponse.strip()
+        if reponse.upper().startswith("RIEN"):
+            return None
+        if ":" not in reponse:
+            return None
+        section, note = reponse.split(":", 1)
+        section, note = section.strip(), note.strip()
+        ajouter_note_profil(section, note)
+        return (section, note)
+    except Exception:
+        return None
+
+
+_PROMPT_CONSOLIDATION_PROFIL = """Voici une liste de notes accumulées sur un gestionnaire, dans une même catégorie.
+Plusieurs notes disent probablement la même chose avec des mots différents.
+
+Fusionne-les en une liste courte (2 à 4 notes MAXIMUM) de traits DISTINCTS, sans
+redondance ni répétition. Généralise si plusieurs notes proches expriment la même idée.
+Formule chaque note en français, courte (max 12 mots), sans ponctuation finale.
+
+Réponds STRICTEMENT avec une liste à puces "- ...", une note par ligne, rien d'autre."""
+
+
+def consolider_section_profil(section: str, model: str, backend: str) -> bool:
+    """Fusionne les notes redondantes/proches d'une section du profil via le LLM.
+    Retourne True si la section a été réécrite, False sinon (silencieux en cas d'erreur).
+    """
+    from core.ai_memory import lister_notes_section, remplacer_notes_section
+
+    notes = lister_notes_section(section)
+    if len(notes) < 2:
+        return False
+    try:
+        messages = [
+            {"role": "system", "content": _PROMPT_CONSOLIDATION_PROFIL},
+            {"role": "user", "content": "\n".join(f"- {n}" for n in notes)},
+        ]
+        if backend == "github":
+            reponse = envoyer_messages_github(messages, model=model, timeout=30, _max_retries=1)
+        elif backend == "openai":
+            reponse = envoyer_messages_openai(messages, model=model, timeout=30, _max_retries=1)
+        else:
+            reponse = envoyer_messages(messages, model=model, timeout=30)
+
+        nouvelles_notes = [
+            l.strip().lstrip("- ").strip()
+            for l in reponse.strip().splitlines()
+            if l.strip().startswith("-")
+        ]
+        if not nouvelles_notes:
+            return False
+        remplacer_notes_section(section, nouvelles_notes)
+        return True
+    except Exception:
+        return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 #  Gestionnaire de conversation
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1413,12 +1548,16 @@ class Conversation:
         return bloc
 
     def _build_system(self, config, stats_history):
-        from core.ai_memory import construire_section_memoire, get_prenom_gestionnaire
+        from core.ai_memory import (
+            construire_section_memoire, get_prenom_gestionnaire,
+            construire_section_profil_md,
+        )
         contexte    = construire_contexte(config, stats_history)
         metriques   = self._construire_bloc_metriques(stats_history)
         mapping_ids = _construire_mapping_ids(config.get("machines", {}))
         nom_labo    = config.get("nom_projet", "")
         memoire     = construire_section_memoire(nom_labo)
+        profil_md   = construire_section_profil_md()
         prenom      = get_prenom_gestionnaire()
         profil_txt  = (
             f"\n== Profil du gestionnaire ==\n"
@@ -1430,7 +1569,8 @@ class Conversation:
             .replace("{metriques}",   metriques)
             .replace("{mapping_ids}", mapping_ids)
             .replace("{memoire}",     memoire + profil_txt)
-        ) + "\n\n" + _construire_regles_style()
+            .replace("{profil_md}",   profil_md)
+        )
 
     def initialiser(self, config, stats_history=None, aggregator=None):
         """Construit le prompt système avec le contexte du labo."""
@@ -1525,6 +1665,13 @@ class Conversation:
         self.ajouter_message_utilisateur(contenu_envoye)
         if self.backend == "github":
             reponse = envoyer_messages_github(
+                messages=self._messages_complets(),
+                model=self.model,
+                on_token=on_token,
+                stop_event=stop_event,
+            )
+        elif self.backend == "openai":
+            reponse = envoyer_messages_openai(
                 messages=self._messages_complets(),
                 model=self.model,
                 on_token=on_token,

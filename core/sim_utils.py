@@ -5,7 +5,7 @@ Extraites de TabLive pour permettre les tests unitaires.
 
 
 def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=None,
-                              paillasse_occupee=None):
+                              paillasse_occupee=None, reserved_slots=None):
     """Retourne (machine_dict, nom_machine, etape) pour la prochaine étape du workflow.
 
     Règle fondamentale : le workflow du tube N'EST JAMAIS modifié sauf si aucune
@@ -28,11 +28,20 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
         Noms des paillasses (tech_requis_poste=True) ayant déjà un analyste.
         Ces machines reçoivent un malus de scoring pour favoriser les paillasses libres,
         évitant qu'un seul analyste soit bloqué pendant que l'autre paillasse reste vide.
+    reserved_slots : dict, optional
+        {nom_machine: nb_slots_réservés_par_des_techs_en_transit}
+        CRITIQUE : sans ce paramètre, la fonction peut continuer à recommander une
+        machine déjà saturée de réservations non encore déposées, provoquant une
+        accumulation infinie de réservations fantômes et un blocage permanent des
+        techniciens (voir bug reservations ct1/centri3 — les tubes n'étaient jamais
+        livrés après quelques jours de simulation).
     """
     if virtual_queues is None:
         virtual_queues = {}
     if paillasse_occupee is None:
         paillasse_occupee = set()
+    if reserved_slots is None:
+        reserved_slots = {}
 
     while tube["workflow"]:
         etape = tube["workflow"][0]  # peek uniquement — PAS de pop ici
@@ -43,11 +52,15 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
             print(f"[ERREUR] Pas de machine pour l'étape '{etape}', étape ignorée")
             continue
 
-        def _score(p, _mq=machine_queues, _vq=virtual_queues, _po=paillasse_occupee):
+        def _score(p, _mq=machine_queues, _vq=virtual_queues, _po=paillasse_occupee, _rs=reserved_slots):
             nom, m = p
             cap = m.get("capacite", 4)
             fm  = m.get("file_max", cap)
-            current = len(_mq.get(nom, [])) + _vq.get(nom, 0)
+            # Réservations d'AUTRES tubes en transit vers cette machine (exclut la
+            # réservation propre de CE tube s'il en avait déjà une sur cette machine)
+            reserves_autres = _rs.get(nom, 0) - (1 if tube.get("_reserved_machine") == nom else 0)
+            reserves_autres = max(0, reserves_autres)
+            current = len(_mq.get(nom, [])) + _vq.get(nom, 0) + reserves_autres
             if current >= fm:
                 return (2, 9999, 0)   # machine pleine → toujours écartée (sentinel > tout score valide)
             # Stratégie batch-first : slots restants avant déclenchement du cycle

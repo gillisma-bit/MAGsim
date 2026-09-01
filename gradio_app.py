@@ -29,13 +29,32 @@ from core.ai_assistant import (
 )
 
 # ─── Whisper (optionnel : désactivé si non dispo ou pas de ffmpeg) ────────────
+_WHISPER_PROMPT = (
+    "MAGsim, laboratoire, tube, technicien, machine, simulation, navette, urgence, "
+    "centrifugeur, analyseur, automate, protocole, consommable, workflow, priorité, "
+    "spécimen, prélèvement, résultat, délai, file d'attente, zone, trajet"
+)
 try:
-    import warnings, os as _os
+    import warnings, os as _os, sys as _sys
     _os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    # Ajouter les DLLs NVIDIA (cuDNN, cuBLAS) au chemin de recherche Windows
+    for _sp in _sys.path:
+        _nvidia_root = _os.path.join(_sp, "nvidia")
+        if _os.path.isdir(_nvidia_root):
+            for _sub in _os.listdir(_nvidia_root):
+                _bin = _os.path.join(_nvidia_root, _sub, "bin")
+                if _os.path.isdir(_bin):
+                    _os.add_dll_directory(_bin)
+            break
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         from faster_whisper import WhisperModel
-        _whisper = WhisperModel("base", device="cpu", compute_type="int8")
+        try:
+            _whisper = WhisperModel("large-v3", device="cuda", compute_type="int8")
+            print("[gradio_app][Whisper] large-v3 sur GPU (CUDA int8)")
+        except Exception as _cuda_err:
+            print(f"[gradio_app][Whisper] GPU indisponible ({_cuda_err}), repli sur medium/CPU")
+            _whisper = WhisperModel("medium", device="cpu", compute_type="int8")
     WHISPER_OK = True
 except Exception as _e:
     print(f"[gradio_app] Whisper non disponible : {_e}")
@@ -100,7 +119,8 @@ def _transcrire(audio_path: str) -> str:
     if not WHISPER_OK or not audio_path:
         return ""
     try:
-        segments, _ = _whisper.transcribe(audio_path, language="fr")
+        segments, _ = _whisper.transcribe(audio_path, language="fr",
+                                           initial_prompt=_WHISPER_PROMPT)
         return " ".join(s.text for s in segments).strip()
     except Exception as e:
         return f"[Erreur transcription : {e}]"

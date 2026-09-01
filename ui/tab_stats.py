@@ -1023,14 +1023,14 @@ class TabStats:
     def _ia_compte_rendu_auto(self):
         """Envoie automatiquement une demande de compte rendu à l'IA après une sim accélérée.
         Utilise une conversation fraîche et un contexte tronqué pour éviter les erreurs 413.
-        N'est déclenché qu'en backend GitHub — Ollama (Qwen local) n'est JAMAIS appelé
-        automatiquement pour éviter de charger la GPU sans action explicite.
+        N'est déclenché qu'en backend cloud (OpenAI/GitHub) — Ollama (modèle local GPU)
+        n'est JAMAIS appelé automatiquement pour éviter de charger la GPU sans action explicite.
         """
         if self._ia_en_cours or self._ia_conversation is None:
             return
 
         # Refuser silencieusement si le backend est Ollama (modèle local GPU)
-        if self._ia_backend != "github":
+        if self._ia_backend not in ("openai", "github"):
             self.lbl_fast_status.config(text="✅ Terminé.")
             return
 
@@ -1040,7 +1040,7 @@ class TabStats:
         # Construire un bloc de métriques compact (agrégateur + métriques enrichies)
         from core.ai_assistant import (
             construire_metriques_aggregateur, construire_metriques_block,
-            envoyer_messages_github, envoyer_messages,
+            envoyer_messages_openai, envoyer_messages,
         )
         metriques_parties = []
         if aggregator and aggregator.nb_jours >= 1.0:
@@ -1099,8 +1099,8 @@ class TabStats:
             try:
                 def on_token(tok):
                     self.parent.after(0, self._ia_on_token, tok)
-                if backend == "github":
-                    reponse = envoyer_messages_github(
+                if backend == "openai":
+                    reponse = envoyer_messages_openai(
                         messages=messages_directs, model=model,
                         on_token=on_token, stop_event=_stop,
                     )
@@ -1172,16 +1172,16 @@ class TabStats:
         self._ia_chat.see("end")
 
     def _ia_charger_modeles(self):
-        """Thread : charge les modèles Ollama + GitHub Models disponibles."""
+        """Thread : charge les modèles Ollama + OpenAI disponibles."""
         from core.ai_assistant import (
             ollama_disponible, lister_modeles,
-            github_models_disponible, GITHUB_MODELES,
+            openai_disponible, OPENAI_MODELES,
         )
         entrees = []
         if ollama_disponible():
             entrees += [f"Ollama │ {m}" for m in lister_modeles()]
-        if github_models_disponible():
-            entrees += [f"GitHub │ {m}" for m in GITHUB_MODELES]
+        if openai_disponible():
+            entrees += [f"OpenAI │ {m}" for m in OPENAI_MODELES]
         self.parent.after(0, self._ia_on_modeles_charges, entrees)
 
     def _ia_on_modeles_charges(self, entrees):
@@ -1189,7 +1189,7 @@ class TabStats:
 
         if entrees:
             def _pref(e):
-                return "gpt-4.1-mini" in e.lower() or "llama3" in e.lower()
+                return "gpt-4o-mini" in e.lower() or "gpt-4.1-mini" in e.lower() or "llama3" in e.lower()
             sel = next((e for e in entrees if _pref(e)), entrees[0])
             self._ia_model_var.set(sel)
             self._ia_appliquer_selection(sel)
@@ -1201,13 +1201,16 @@ class TabStats:
             self._ia_afficher(
                 "⚠️  Aucun backend disponible.\n"
                 "Option 1 : Installez Ollama (ollama.com)\n"
-                "Option 2 : Configurez un token GitHub dans l'onglet Assistant IA (⛯ Token).\n\n",
+                "Option 2 : Configurez une clé OpenAI dans l'onglet Assistant IA (⛯ Clé OpenAI).\n\n",
                 "error",
             )
 
     def _ia_appliquer_selection(self, sel):
         """Extrait backend + nom du modèle depuis une entrée du combobox."""
-        if sel.startswith("GitHub │ "):
+        if sel.startswith("OpenAI │ "):
+            self._ia_backend = "openai"
+            self._ia_model   = sel[len("OpenAI │ "):]
+        elif sel.startswith("GitHub │ "):
             self._ia_backend = "github"
             self._ia_model   = sel[len("GitHub │ "):]
         else:

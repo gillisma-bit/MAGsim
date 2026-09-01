@@ -125,6 +125,7 @@ def _make_tab_live(cm):
 
     with (
         patch("ui.tab_live.tk.Canvas", return_value=mock_canvas),
+        patch("ui.tab_live.tk.BooleanVar", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Scrollbar", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Frame", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Button", return_value=MagicMock()),
@@ -177,9 +178,12 @@ def _init_sim(tab, seed):
         "time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
         "transit_time_avg": [], "transit_time_rolling": [],
         "transit_time_pending_max": [],
+        "tat_normal_rolling": [], "tat_urgent_rolling": [],
         "rejetes": [], "degrades": [], "pannes": {},
         "distances_tech": {}, "bienetre": {}, "arrivees_par_heure": {},
+        "arrivees_par_heure_par_service": {},
         "events_arret_maladie": [],
+        "stress_events": [], "anticipations": [],
     }
     tab._jours_connus_dist  = set()
     tab.stats_tubes_total   = 0
@@ -217,6 +221,9 @@ def _init_sim(tab, seed):
         tech.taux_montee_fatigue    = float(office.get("taux_montee_fatigue", 0.01))
         tech.taux_recuperation_nuit = float(office.get("taux_recuperation_nuit", 0.15))
         tech.capacite_max_tubes     = int(office.get("capacite_max_tubes", 10))
+        metres_par_case = float(tab.config_manager.data.get("personnel", {}).get(
+            "metres_par_case", 2.6))
+        tech.vitesse_base_px = 20.83 / max(0.1, metres_par_case)
         tech.office_x = office["coords"]["x"]
         tech.office_y = office["coords"]["y"]
         tab.technicians.append(tech)
@@ -236,7 +243,7 @@ def _run_stepbystep(tab, duree, seed):
     que la simulation live (run_sim_loop)."""
     _init_sim(tab, seed)
     try:
-        while tab.env.now < duree and tab.running:
+        while tab.env.peek() < duree and tab.running:
             tab.env.step()
     except StopIteration:
         pass

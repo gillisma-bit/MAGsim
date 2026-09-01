@@ -163,6 +163,7 @@ def _make_tab(cm):
     mock_canvas.winfo_exists.return_value = False
     with (
         patch("ui.tab_live.tk.Canvas",     return_value=mock_canvas),
+        patch("ui.tab_live.tk.BooleanVar", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Scrollbar", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Frame",     return_value=MagicMock()),
         patch("ui.tab_live.ttk.Button",    return_value=MagicMock()),
@@ -195,9 +196,12 @@ def _init_sim(tab, seed):
         "time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
         "transit_time_avg": [], "transit_time_rolling": [],
         "transit_time_pending_max": [],
+        "tat_normal_rolling": [], "tat_urgent_rolling": [],
         "rejetes": [], "degrades": [], "pannes": {},
         "distances_tech": {}, "bienetre": {}, "arrivees_par_heure": {},
+        "arrivees_par_heure_par_service": {},
         "events_arret_maladie": [],
+        "stress_events": [], "anticipations": [],
     }
     tab._jours_connus_dist    = set()
     tab.stats_tubes_total     = 0

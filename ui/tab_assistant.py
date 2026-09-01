@@ -27,17 +27,49 @@ try:
     import sounddevice as _sd
     import numpy as _np
     MICRO_OK = True
-except ImportError:
+except Exception:
+    _sd = None
+    _np = None
     MICRO_OK = False
 
 # ─── Whisper (optionnel) ──────────────────────────────────────────────────────
+_WHISPER_PROMPT = (
+    "MAGsim, laboratoire, tube, technicien, machine, simulation, navette, urgence, "
+    "centrifugeur, analyseur, automate, protocole, consommable, workflow, priorité, "
+    "spécimen, prélèvement, résultat, délai, file d'attente, zone, trajet"
+)
 try:
-    import warnings as _w, os as _os
+    import warnings as _w, os as _os, sys as _sys
     _os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    # Ajouter les DLLs NVIDIA (cuDNN, cuBLAS) au chemin de recherche Windows
+    for _pkg in ("nvidia.cudnn", "nvidia.cublas", "nvidia.cuda_runtime"):
+        _parts = _pkg.split(".")
+        try:
+            import importlib as _il
+            _mod = _il.import_module(_pkg.replace(".", "."))
+            _dll_dir = _os.path.join(_os.path.dirname(_mod.__file__), "bin")
+            if _os.path.isdir(_dll_dir):
+                _os.add_dll_directory(_dll_dir)
+        except Exception:
+            pass
+    # Fallback : chercher dans site-packages/nvidia/*/bin
+    for _sp in _sys.path:
+        _nvidia_root = _os.path.join(_sp, "nvidia")
+        if _os.path.isdir(_nvidia_root):
+            for _sub in _os.listdir(_nvidia_root):
+                _bin = _os.path.join(_nvidia_root, _sub, "bin")
+                if _os.path.isdir(_bin):
+                    _os.add_dll_directory(_bin)
+            break
     with _w.catch_warnings():
         _w.simplefilter("ignore")
         from faster_whisper import WhisperModel as _WhisperModel
-        _whisper = _WhisperModel("base", device="cpu", compute_type="int8")
+        try:
+            _whisper = _WhisperModel("large-v3", device="cuda", compute_type="int8")
+            print("[Whisper] large-v3 sur GPU (CUDA int8)")
+        except Exception as _cuda_err:
+            print(f"[Whisper] GPU indisponible ({_cuda_err}), repli sur medium/CPU")
+            _whisper = _WhisperModel("medium", device="cpu", compute_type="int8")
     WHISPER_OK = True
 except Exception:
     _whisper = None
@@ -45,10 +77,11 @@ except Exception:
 
 
 class TabAssistant:
-    def __init__(self, parent, config_manager, tab_live_ref=None):
+    def __init__(self, parent, config_manager, tab_live_ref=None, tab_config_ref=None):
         self.parent         = parent
         self.config_manager = config_manager
         self.tab_live       = tab_live_ref
+        self.tab_config     = tab_config_ref
         self._conversation  = None
         self._model         = tk.StringVar(value="llama3")
         self._backend       = "ollama"   # "ollama" | "github"
@@ -59,12 +92,44 @@ class TabAssistant:
         self._derniere_reponse  = ""
         self._patches_session   = []   # descriptions des patches appliqués cette session
         # ── TTS / Micro ──
-        self._tts_actif   = tk.BooleanVar(value=TTS_OK)
-        self._micro_actif = False
-        self._audio_data  = []
+        _tts_init = TTS_OK
+        if not _tts_init:
+            try:
+                from core.ai_assistant import openai_disponible as _od
+                _tts_init = _od()
+            except Exception:
+                pass
+        self._tts_actif    = tk.BooleanVar(value=_tts_init)
+        self._tts_stop_event = threading.Event()   # interrompre la lecture en cours
+        self._vad_actif    = tk.BooleanVar(value=False)   # auto-interruption (casque requis)
+        self._micro_actif  = False
+        self._audio_data   = []
+        self._ptt_maintenu = False   # push-to-talk : Ctrl gauche maintenu
         self._build_ui()
+        self._activer_push_to_talk()
         # Vérification des backends en arrière-plan au démarrage
         threading.Thread(target=self._charger_modeles, daemon=True).start()
+
+    def _activer_push_to_talk(self):
+        """Maintenir Ctrl (gauche) démarre l'enregistrement, le relâcher l'arrête et l'envoie."""
+        if not MICRO_OK:
+            return
+        toplevel = self.parent.winfo_toplevel()
+        toplevel.bind_all("<KeyPress-Control_L>", self._ptt_press)
+        toplevel.bind_all("<KeyRelease-Control_L>", self._ptt_release)
+
+    def _ptt_press(self, _event=None):
+        if self._ptt_maintenu or self._micro_actif:
+            return  # ignore l'auto-répétition du système pendant le maintien
+        self._ptt_maintenu = True
+        self._toggle_micro()
+
+    def _ptt_release(self, _event=None):
+        if not self._ptt_maintenu:
+            return
+        self._ptt_maintenu = False
+        if self._micro_actif:
+            self._toggle_micro()
 
     def set_tab_live(self, tab_live):
         self.tab_live = tab_live
@@ -92,7 +157,7 @@ class TabAssistant:
                  font=theme.FONT_BODY).pack(side=tk.LEFT, padx=(0, 4))
 
         self._combo_model = ttk.Combobox(bar_droite, textvariable=self._model,
-                                         width=32, state="readonly",
+                                         width=18, state="readonly",
                                          font=theme.FONT_BODY)
         self._combo_model.pack(side=tk.LEFT)
         self._combo_model.bind("<<ComboboxSelected>>", self._on_model_change)
@@ -101,12 +166,8 @@ class TabAssistant:
                    command=self._actualiser_modeles,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
 
-        ttk.Button(bar_droite, text="⛯  Token GitHub",
-                   command=self._dialog_token_github,
-                   padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
-
-        ttk.Button(bar_droite, text="🎨  Style IA",
-                   command=self._dialog_style_ia,
+        ttk.Button(bar_droite, text="⛯  Clé OpenAI",
+                   command=self._dialog_token_openai,
                    padding=(6, 2)).pack(side=tk.LEFT, padx=(6, 0))
 
         ttk.Button(bar_droite, text="📊  Sources",
@@ -119,6 +180,13 @@ class TabAssistant:
 
         # ── Bouton TTS ──
         self._btn_tts_lbl = "🔊 Voix" if TTS_OK else "🔇 Voix"
+        _tts_btn_ok = TTS_OK
+        if not _tts_btn_ok:
+            try:
+                from core.ai_assistant import openai_disponible as _od2
+                _tts_btn_ok = _od2()
+            except Exception:
+                pass
         self._btn_tts = tk.Checkbutton(
             bar_droite,
             text=self._btn_tts_lbl,
@@ -127,9 +195,21 @@ class TabAssistant:
             bg="#13131f", fg="#89b4fa",
             selectcolor="#313145",
             activebackground="#13131f",
-            state="normal" if TTS_OK else "disabled",
+            state="normal" if _tts_btn_ok else "disabled",
         )
         self._btn_tts.pack(side=tk.LEFT, padx=(10, 0))
+
+        self._btn_vad = tk.Checkbutton(
+            bar_droite,
+            text="🎙️ Auto-interruption",
+            variable=self._vad_actif,
+            font=theme.FONT_BODY,
+            bg="#13131f", fg="#89b4fa",
+            selectcolor="#313145",
+            activebackground="#13131f",
+            state="normal" if MICRO_OK else "disabled",
+        )
+        self._btn_vad.pack(side=tk.LEFT, padx=(10, 0))
 
         tk.Frame(self.parent, bg="#313145", height=1).pack(fill="x")
 
@@ -225,11 +305,16 @@ class TabAssistant:
             relief="flat", bd=0,
             padx=8, pady=4,
             activebackground="#45475a",
-            cursor="hand2" if (MICRO_OK and WHISPER_OK) else "arrow",
-            state="normal" if (MICRO_OK and WHISPER_OK) else "disabled",
+            cursor="hand2" if MICRO_OK else "arrow",
+            state="normal" if MICRO_OK else "disabled",
             command=self._toggle_micro,
         )
         self._btn_micro_widget.grid(row=0, column=1, sticky="nsew", padx=(4, 2), pady=4)
+
+        if MICRO_OK:
+            tk.Label(saisie_frame, text="Ctrl (maintenu) = parler",
+                     font=("Segoe UI", 7), bg="#181825", fg="#585b70"
+                     ).grid(row=1, column=1, sticky="n")
 
         self._btn_envoyer = tk.Button(
             saisie_frame,
@@ -343,10 +428,10 @@ class TabAssistant:
     # ─────────────────────────────────────────────────────────────────────────
 
     def _charger_modeles(self):
-        """Thread : charge les modèles Ollama + GitHub Models disponibles."""
+        """Thread : charge les modèles Ollama + OpenAI disponibles."""
         from core.ai_assistant import (
             ollama_disponible, lister_modeles,
-            github_models_disponible, GITHUB_MODELES,
+            openai_disponible, OPENAI_MODELES,
         )
         entrees  = []
         statuts  = []
@@ -358,11 +443,11 @@ class TabAssistant:
         else:
             statuts.append("Ollama absent")
 
-        if github_models_disponible():
-            entrees += [f"GitHub │ {m}" for m in GITHUB_MODELES]
-            statuts.append("GitHub Models")
+        if openai_disponible():
+            entrees += [f"OpenAI │ {m}" for m in OPENAI_MODELES]
+            statuts.append("OpenAI")
         else:
-            statuts.append("GitHub non configuré")
+            statuts.append("OpenAI non configuré")
 
         self.parent.after(0, self._on_modeles_charges, entrees, statuts)
 
@@ -409,7 +494,7 @@ class TabAssistant:
                 "⚠️  Aucun modèle disponible.\n\n"
                 "Option 1 (local) : Installez Ollama → https://ollama.com\n"
                 "  puis : ollama pull llama3 → ollama serve\n"
-                "Option 2 (cloud) : Cliquez ⛯ Token et saisissez votre token GitHub Copilot.",
+                "Option 2 (cloud) : Cliquez Clé OpenAI et saisissez votre clé API openai.com.",
                 tag="warn",
             )
 
@@ -589,13 +674,11 @@ class TabAssistant:
 
         entry.focus_set()
 
-    def _dialog_style_ia(self):
-        """Fenêtre modale pour configurer le style de réponse de l'IA."""
-        from core.ai_assistant import get_style_ia, set_style_ia
-        style_actuel = get_style_ia()
-
+    def _dialog_token_openai(self):
+        """Fenêtre modale pour saisir/modifier la clé API OpenAI."""
+        from core.ai_assistant import get_cle_openai, set_cle_openai
         dlg = tk.Toplevel(self.parent)
-        dlg.title("Style de l'assistant IA")
+        dlg.title("Clé API OpenAI")
         dlg.resizable(False, False)
         dlg.grab_set()
         dlg.configure(bg="#1e1e2e")
@@ -603,69 +686,93 @@ class TabAssistant:
         self.parent.update_idletasks()
         px = self.parent.winfo_rootx() + self.parent.winfo_width()  // 2
         py = self.parent.winfo_rooty() + self.parent.winfo_height() // 2
-        dlg.geometry(f"440x240+{px - 220}+{py - 120}")
+        dlg.geometry(f"520x290+{px - 260}+{py - 145}")
 
-        tk.Label(dlg, text="🎨  Style de l'assistant IA",
+        def _label(txt):
+            tk.Label(dlg, text=txt, bg="#1e1e2e", fg="#cdd6f4",
+                     font=("Segoe UI", 9), justify="left",
+                     wraplength=480).pack(anchor="w", padx=18, pady=(4, 0))
+
+        tk.Label(dlg, text="⛯  OpenAI — Clé API",
                  bg="#1e1e2e", fg="#cba6f7",
-                 font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=18, pady=(14, 10))
+                 font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=18, pady=(14, 6))
 
-        tk.Label(dlg, text="Ces réglages s'appliquent immédiatement à la prochaine réponse.",
-                 bg="#1e1e2e", fg="#6c7086",
-                 font=("Segoe UI", 8)).pack(anchor="w", padx=18, pady=(0, 10))
+        _label(
+            "Créez une clé API sur platform.openai.com :\n"
+            "  Dashboard → API keys → Create new secret key\n"
+            "  Le modèle gpt-4o-mini est recommandé (le moins cher)."
+        )
+        _label(
+            "La clé est stockée localement dans data/config_api.json "
+            "(jamais envoyée à nos serveurs)."
+        )
 
-        var_court = tk.BooleanVar(value=style_actuel.get("reponses_courtes", False))
-        var_questions = tk.BooleanVar(value=style_actuel.get("questions_proactives", True))
+        frame_entry = tk.Frame(dlg, bg="#1e1e2e")
+        frame_entry.pack(fill="x", padx=18, pady=(10, 0))
+        tk.Label(frame_entry, text="Clé :", bg="#1e1e2e", fg="#89b4fa",
+                 font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(0, 6))
 
-        def _case(parent, variable, texte, description):
-            f = tk.Frame(parent, bg="#1e1e2e")
-            f.pack(fill="x", padx=18, pady=4)
-            tk.Checkbutton(f, text=texte, variable=variable,
-                           font=("Segoe UI", 10),
-                           bg="#1e1e2e", fg="#cdd6f4",
-                           selectcolor="#313244",
-                           activebackground="#1e1e2e").pack(anchor="w")
-            tk.Label(f, text=description, bg="#1e1e2e", fg="#6c7086",
-                     font=("Segoe UI", 8)).pack(anchor="w", padx=20)
+        var_token  = tk.StringVar(value=get_cle_openai() or "")
+        var_masque = tk.BooleanVar(value=True)
+        entry = tk.Entry(frame_entry, textvariable=var_token, show="•",
+                         width=42, font=("Courier New", 9),
+                         bg="#313244", fg="#cdd6f4",
+                         insertbackground="#cdd6f4", relief="flat", bd=4)
+        entry.pack(side=tk.LEFT)
 
-        _case(dlg, var_court,
-              "Réponses courtes et directes",
-              "Maximum 3-4 phrases, sans introduction ni conclusion.")
-        _case(dlg, var_questions,
-              "Poser une question en fin de réponse",
-              "Décochez pour que l'IA agisse sans demander confirmation.")
+        def _toggle():
+            entry.config(show="" if not var_masque.get() else "•")
+        tk.Checkbutton(frame_entry, text="Voir", variable=var_masque,
+                       command=_toggle,
+                       bg="#1e1e2e", fg="#585b70",
+                       selectcolor="#1e1e2e",
+                       font=("Segoe UI", 8)).pack(side=tk.LEFT, padx=(6, 0))
 
         frame_btn = tk.Frame(dlg, bg="#1e1e2e")
-        frame_btn.pack(fill="x", padx=18, pady=16)
+        frame_btn.pack(fill="x", padx=18, pady=14)
 
         def _sauver():
-            nouveau_style = {
-                "reponses_courtes":    var_court.get(),
-                "questions_proactives": var_questions.get(),
-            }
-            set_style_ia(nouveau_style)
-            # Reconstruire le prompt système immédiatement
-            if self._conversation is not None and self._conversation._config is not None:
-                self._conversation._system = self._conversation._build_system(
-                    self._conversation._config,
-                    self._conversation._stats_history,
-                )
+            cle = var_token.get().strip()
+            if not cle:
+                messagebox.showwarning("Clé vide",
+                    "Saisissez une clé avant de sauvegarder.", parent=dlg)
+                return
+            set_cle_openai(cle)
             dlg.destroy()
-            self._afficher_message_systeme("✓ Style de l'assistant mis à jour.")
+            self._afficher_message_systeme(
+                "✓ Clé OpenAI enregistrée. Chargement des modèles…"
+            )
+            self._actualiser_modeles()
+
+        def _effacer():
+            if messagebox.askyesno("Effacer la clé",
+                    "Voulez-vous supprimer la clé OpenAI enregistrée ?",
+                    parent=dlg):
+                set_cle_openai("")
+                dlg.destroy()
+                self._afficher_message_systeme("Clé OpenAI supprimée.")
+                self._actualiser_modeles()
 
         ttk.Button(frame_btn, text="✓  Enregistrer", command=_sauver,
                    padding=(10, 4)).pack(side=tk.LEFT)
+        ttk.Button(frame_btn, text="✕  Effacer", command=_effacer,
+                   padding=(10, 4)).pack(side=tk.LEFT, padx=(8, 0))
         ttk.Button(frame_btn, text="Annuler", command=dlg.destroy,
                    padding=(10, 4)).pack(side=tk.RIGHT)
+
+        entry.focus_set()
 
     def _on_model_change(self, _event=None):
         """Détecte le backend à partir du préfixe et réinitialise la conversation."""
         selection = self._model.get()
-        if selection.startswith("GitHub │ "):
+        if selection.startswith("OpenAI │ "):
+            self._backend = "openai"
+            nom_modele    = selection[len("OpenAI │ "):]
+        elif selection.startswith("GitHub │ "):
             self._backend = "github"
             nom_modele    = selection[len("GitHub │ "):]
         else:
             self._backend = "ollama"
-            # Support ancien format (sans préfixe) et nouveau "Ollama | xxx"
             nom_modele = selection.split("│ ", 1)[-1] if "│" in selection else selection
         # Stocker le vrai nom du modèle (sans préfixe) pour l'API
         self._nom_modele = nom_modele
@@ -803,45 +910,219 @@ class TabAssistant:
         if patch:
             self._proposer_patch(patch)
 
-        # TTS
+        # TTS — toujours lancer, _synthetiser_et_jouer gère la disponibilité
         self._derniere_reponse = texte_propre
-        if self._tts_actif.get() and TTS_OK:
+        if self._tts_actif.get():
             threading.Thread(target=self._synthetiser_et_jouer,
                              args=(texte_propre,), daemon=True).start()
+
+        # Apprentissage du profil — extraction de trait en arrière-plan (léger, non bloquant)
+        if self._derniere_question:
+            threading.Thread(
+                target=self._apprendre_profil,
+                args=(self._derniere_question, texte_propre),
+                daemon=True,
+            ).start()
+
+    def _apprendre_profil(self, question, reponse):
+        """Analyse l'échange en arrière-plan et enrichit le profil MD si un trait durable apparaît."""
+        from core.ai_assistant import extraire_trait_profil, consolider_section_profil
+        from core.ai_memory import nb_notes_section, SEUIL_CONSOLIDATION
+        model   = getattr(self, "_nom_modele", None) or self._model.get()
+        backend = getattr(self, "_backend", "ollama")
+        trait = extraire_trait_profil(question, reponse, model, backend)
+        if not trait:
+            return
+        section, _note = trait
+        # Si la section devient trop fournie, laisser l'IA fusionner les notes proches
+        if nb_notes_section(section) > SEUIL_CONSOLIDATION:
+            consolider_section_profil(section, model, backend)
+        if self._conversation is not None and self._conversation._config is not None:
+            # Rafraîchir immédiatement le prompt système pour que le trait
+            # s'applique dès la suite de cette même conversation
+            self._conversation._system = self._conversation._build_system(
+                self._conversation._config,
+                self._conversation._stats_history,
+            )
 
     # ─────────────────────────────────────────────────────────────────────────
     #  TTS
     # ─────────────────────────────────────────────────────────────────────────
 
-    def _synthetiser_et_jouer(self, texte: str, voix: str = "fr-FR-DeniseNeural"):
-        """Synthétise le texte et le joue via Windows MCI (thread arrière-plan)."""
+    def _synthetiser_et_jouer(self, texte: str, voix: str = "auto"):
+        """Pipeline TTS phrase par phrase avec interruption VAD."""
+        import re as _re, queue as _q, threading as _thr, time as _time
         t = texte
-        t = re.sub(r'```[\s\S]*?```', ' ', t)
-        t = re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', t)
-        t = re.sub(r'^#{1,6}\s+', '', t, flags=re.MULTILINE)
-        t = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
-        t = re.sub(r'`([^`]+)`', r'\1', t)
-        t = re.sub(r'^\s*[-*]\s+', '', t, flags=re.MULTILINE)
-        t = re.sub(r'\[M\d+\]', '', t)
-        t = re.sub(r'\(\u2192\s*\[M\d+\]\)', '', t)
-        t = re.sub(r' {2,}', ' ', t).strip()
+        t = _re.sub(r'```[\s\S]*?```', ' ', t)
+        t = _re.sub(r'\*{1,3}([^*]+)\*{1,3}', r'\1', t)
+        t = _re.sub(r'^#{1,6}\s+', '', t, flags=_re.MULTILINE)
+        t = _re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', t)
+        t = _re.sub(r'`([^`]+)`', r'\1', t)
+        t = _re.sub(r'^\s*[-*]\s+', '', t, flags=_re.MULTILINE)
+        t = _re.sub(r'\[M\d+\]', '', t)
+        t = _re.sub(r'\(\u2192\s*\[M\d+\]\)', '', t)
+        t = _re.sub(r' {2,}', ' ', t).strip()
         if not t:
             return
+
+        from core.ai_assistant import get_cle_openai
+        cle = get_cle_openai()
+        if not cle and not TTS_OK:
+            return
+
+        # Capturer l'événement courant — permet l'interruption depuis _toggle_micro
+        stop_ev = self._tts_stop_event
+        stop_ev.clear()
+
+        # Découper en groupes de ~100 caractères
+        morceaux = _re.split(r'(?<=[.!?…])\s+', t)
+        groupes, buf = [], ""
+        for m in morceaux:
+            buf = (buf + " " + m).strip() if buf else m
+            if len(buf) >= 80:
+                groupes.append(buf)
+                buf = ""
+        if buf:
+            groupes.append(buf)
+
+        file_q = _q.Queue(maxsize=2)
+        DONE = object()
+
+        def _producer():
+            for g in groupes:
+                if stop_ev.is_set() or not g or not any(c.isalpha() for c in g):
+                    continue
+                try:
+                    ch = self._tts_generer_edge(g) if TTS_OK else self._tts_generer_openai(g, cle)
+                    file_q.put(ch)
+                except Exception as exc:
+                    print(f"[TTS] {exc}")
+            file_q.put(DONE)
+
+        _thr.Thread(target=_producer, daemon=True).start()
+
+        # Démarrer la surveillance VAD uniquement si l'utilisateur l'a activée
+        # (désactivé par défaut — sur haut-parleurs, le micro capte la voix de
+        # l'IA elle-même et déclenche des interruptions intempestives)
+        if MICRO_OK and self._vad_actif.get():
+            _thr.Thread(target=self._vad_pendant_tts, args=(stop_ev,), daemon=True).start()
+
+        # Consumer : lecture non-bloquante avec vérification stop_ev toutes les 50ms
+        while True:
+            item = file_q.get()
+            if item is DONE or stop_ev.is_set():
+                break
+            self._jouer_mp3_mci(item, stop_ev)
+
+        # Si VAD a détecté la voix : démarrer l'enregistrement automatiquement
+        if stop_ev.is_set() and not self._micro_actif:
+            self.parent.after(0, self._demarrer_enregistrement_apres_vad)
+
+    def _jouer_mp3_mci(self, chemin: str, stop_ev=None):
+        """Joue un MP3 via MCI avec pré-chauffage du device (évite que le début soit coupé)."""
+        import time as _time
+        alias = "_magsim_tts"
         try:
-            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-                chemin = f.name
-            async def _run():
-                comm = _edge_tts.Communicate(t, voix)
-                await comm.save(chemin)
-            asyncio.run(_run())
-            # Lecture via Windows MCI (aucune dépendance supplémentaire)
-            alias = "_magsim_tts"
             ctypes.windll.winmm.mciSendStringW(
                 f'open "{chemin}" type mpegvideo alias {alias}', None, 0, None)
-            ctypes.windll.winmm.mciSendStringW(f'play {alias} wait', None, 0, None)
+            # Pré-chauffage : jouer 1ms puis revenir au début — évite que le pilote
+            # audio Windows "mange" le tout début du vrai signal au premier play
+            ctypes.windll.winmm.mciSendStringW(f'play {alias} from 0 to 1', None, 0, None)
+            _time.sleep(0.08)
+            ctypes.windll.winmm.mciSendStringW(f'stop {alias}', None, 0, None)
+            ctypes.windll.winmm.mciSendStringW(f'seek {alias} to start', None, 0, None)
+
+            ctypes.windll.winmm.mciSendStringW(f'play {alias}', None, 0, None)
+            buf_s = ctypes.create_unicode_buffer(64)
+            while True:
+                if stop_ev is not None and stop_ev.is_set():
+                    ctypes.windll.winmm.mciSendStringW(f'stop {alias}', None, 0, None)
+                    break
+                ctypes.windll.winmm.mciSendStringW(f'status {alias} mode', buf_s, 64, None)
+                if buf_s.value.lower() in ('stopped', ''):
+                    break
+                _time.sleep(0.05)
             ctypes.windll.winmm.mciSendStringW(f'close {alias}', None, 0, None)
-        except Exception as exc:
-            print(f"[TTS] {exc}")
+        except Exception:
+            pass
+
+    def _vad_pendant_tts(self, stop_ev):
+        """Écoute le micro pendant la TTS — coupe si l'utilisateur parle."""
+        import time as _t
+        try:
+            import sounddevice as _sd_, numpy as _np_
+        except Exception:
+            return
+        SEUIL_RMS = 2200  # élevé par défaut — recommandé avec casque uniquement
+        FRAMES_MIN = 6    # ~6×50ms = 300ms de parole soutenue pour déclencher
+        compteur = 0
+
+        def _cb(indata, frames, t, status):
+            nonlocal compteur
+            if stop_ev.is_set():
+                raise _sd_.CallbackStop
+            rms = _np_.sqrt(_np_.mean(indata.astype(_np_.float32) ** 2))
+            if rms > SEUIL_RMS:
+                compteur += 1
+                if compteur >= FRAMES_MIN:
+                    stop_ev.set()
+                    raise _sd_.CallbackStop
+            else:
+                compteur = max(0, compteur - 1)
+
+        try:
+            with _sd_.InputStream(samplerate=16000, channels=1, dtype="int16",
+                                   blocksize=800, callback=_cb):
+                while not stop_ev.is_set():
+                    _t.sleep(0.05)
+        except Exception:
+            pass
+
+    def _demarrer_enregistrement_apres_vad(self):
+        """Lance l'enregistrement micro après interruption VAD (appelé sur le thread UI)."""
+        if not self._micro_actif:
+            self._toggle_micro()
+
+    def _tts_generer_openai(self, texte: str, cle: str, voix: str = "nova") -> str:
+        """Génère un fichier MP3 via OpenAI TTS HD, retourne son chemin."""
+        import urllib.request, json as _json
+        payload = _json.dumps({
+            "model": "tts-1-hd",
+            "input": texte[:4096],
+            "voice": voix,
+            "response_format": "mp3",
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/audio/speech",
+            data=payload,
+            headers={"Authorization": f"Bearer {cle}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            chemin = f.name
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            with open(chemin, "wb") as f:
+                f.write(resp.read())
+        return chemin
+
+    def _tts_generer_edge(self, texte: str, voix: str = "fr-CA-SylvieNeural") -> str:
+        """Génère un fichier MP3 via edge-tts (fallback local), retourne son chemin."""
+        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
+            chemin = f.name
+        async def _run():
+            comm = _edge_tts.Communicate(texte, voix)
+            await comm.save(chemin)
+        asyncio.run(_run())
+        return chemin
+
+    # Anciennes méthodes conservées pour compatibilité éventuelle
+    def _tts_openai(self, texte: str, cle: str, voix: str = "nova"):
+        chemin = self._tts_generer_openai(texte, cle, voix)
+        self._jouer_mp3_mci(chemin)
+
+    def _tts_edge(self, texte: str, voix: str = "fr-FR-DeniseNeural"):
+        chemin = self._tts_generer_edge(texte, voix)
+        self._jouer_mp3_mci(chemin)
 
     # ─────────────────────────────────────────────────────────────────────────
     #  Micro (sounddevice + Whisper)
@@ -849,15 +1130,28 @@ class TabAssistant:
 
     def _toggle_micro(self):
         if not self._micro_actif:
+            # Couper immédiatement la TTS en cours
+            self._tts_stop_event.set()
+            self._tts_stop_event = threading.Event()
+            try:
+                import sounddevice as sd_
+            except Exception as exc:
+                self._lbl_statut.config(text=f"⬤  Micro indisponible : {exc}", fg="#f38ba8")
+                return
             self._micro_actif = True
             self._audio_data  = []
             self._btn_micro_widget.config(bg="#dc2626", text="⏹")
             self._lbl_statut.config(text="⬤  Enregistrement… (re-cliquer pour arrêter)", fg="#f38ba8")
-            self._stream = _sd.InputStream(
-                samplerate=16000, channels=1, dtype="int16",
-                callback=self._audio_callback
-            )
-            self._stream.start()
+            try:
+                self._stream = sd_.InputStream(
+                    samplerate=16000, channels=1, dtype="int16",
+                    callback=self._audio_callback
+                )
+                self._stream.start()
+            except Exception as exc:
+                self._micro_actif = False
+                self._btn_micro_widget.config(bg="#313145", text="🎤")
+                self._lbl_statut.config(text=f"⬤  Erreur micro : {exc}", fg="#f38ba8")
         else:
             self._arreter_micro()
 
@@ -875,28 +1169,85 @@ class TabAssistant:
         self._lbl_statut.config(text="⬤  Transcription…", fg="#f9e2af")
         threading.Thread(target=self._transcrire_et_injecter, daemon=True).start()
 
+    _WHISPER_ARTEFACTS = {"...", "[Inaudible]", "[Musique]", "[BLANK_AUDIO]", "[ Silence ]", "[silence]"}
+
     def _transcrire_et_injecter(self):
         try:
-            audio = _np.concatenate(self._audio_data, axis=0)
-            if audio.shape[0] < 1600:  # < 0.1 s
+            import numpy as np_
+            if not self._audio_data:
+                self.parent.after(0, self._lbl_statut.config,
+                                  {"text": "⬤  Aucune donnée audio capturée", "fg": "#585b70"})
+                return
+            audio = np_.concatenate(self._audio_data, axis=0)
+            if audio.shape[0] < 1600:
                 self.parent.after(0, self._lbl_statut.config,
                                   {"text": "⬤  Prêt (enregistrement trop court)", "fg": "#585b70"})
                 return
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 chemin_wav = f.name
             import scipy.io.wavfile as _wavfile
-            _wavfile.write(chemin_wav, 16000,
-                           audio.flatten().astype("int16"))
-            segments, _ = _whisper.transcribe(chemin_wav, language="fr")
-            texte = " ".join(s.text for s in segments).strip()
-            if texte:
+            _wavfile.write(chemin_wav, 16000, audio.flatten().astype("int16"))
+
+            from core.ai_assistant import get_cle_openai
+            cle = get_cle_openai()
+            if cle:
+                texte = self._transcrire_openai(chemin_wav, cle)
+            elif _whisper:
+                segments, _ = _whisper.transcribe(chemin_wav, language="fr",
+                                                   initial_prompt=_WHISPER_PROMPT)
+                texte = " ".join(s.text for s in segments).strip()
+            else:
+                raise RuntimeError(
+                    "Aucun moteur STT disponible.\n"
+                    "Configurez une clé OpenAI ou installez faster-whisper."
+                )
+            if texte and texte not in self._WHISPER_ARTEFACTS and any(c.isalpha() for c in texte):
                 self.parent.after(0, self._injecter_texte, texte)
             else:
                 self.parent.after(0, self._lbl_statut.config,
-                                  {"text": "⬤  Rien entendu", "fg": "#585b70"})
+                                  {"text": "⬤  Rien entendu — parlez plus fort ou réessayez", "fg": "#585b70"})
         except Exception as exc:
             self.parent.after(0, self._lbl_statut.config,
                               {"text": f"⬤  Erreur micro : {exc}", "fg": "#f38ba8"})
+
+    def _transcrire_openai(self, chemin_wav: str, cle: str) -> str:
+        """Transcription via OpenAI Whisper API (whisper-1) — ~1-2 secondes."""
+        import urllib.request, json as _json, time as _t
+        boundary = "MBnd" + str(int(_t.time() * 1000))
+        with open(chemin_wav, "rb") as f:
+            audio_bytes = f.read()
+
+        def _field(name, value):
+            return (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'
+                f"{value}\r\n"
+            ).encode("utf-8")
+
+        body = (
+            _field("model", "whisper-1")
+            + _field("language", "fr")
+            + _field("prompt", _WHISPER_PROMPT)
+            + (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="audio.wav"\r\n'
+                f"Content-Type: audio/wav\r\n\r\n"
+            ).encode("utf-8")
+            + audio_bytes
+            + f"\r\n--{boundary}--\r\n".encode("utf-8")
+        )
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/audio/transcriptions",
+            data=body,
+            headers={
+                "Authorization": f"Bearer {cle}",
+                "Content-Type": f"multipart/form-data; boundary={boundary}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = _json.loads(resp.read().decode("utf-8"))
+        return data.get("text", "").strip()
 
     def _injecter_texte(self, texte: str):
         self._saisie.delete("1.0", "end")
@@ -909,8 +1260,6 @@ class TabAssistant:
         self._btn_envoyer.config(state="normal", text="Envoyer\n↵")
         self._lbl_statut.config(text="⬤  Erreur de connexion", fg="#f38ba8")
         self._chat.config(state="normal")
-        if "(429)" in msg:
-            msg += "\n   → Trop de requêtes en peu de temps. Patientez 30 secondes et réessayez."
         self._chat.insert("end", f"\n⚠️  {msg}\n\n", "error")
         self._chat.config(state="disabled")
         self._chat.see("end")
@@ -995,14 +1344,6 @@ class TabAssistant:
         self.config_manager.data = nouveau_data
         self.config_manager.sauvegarder()
 
-        # Détecter les machines ajoutées en zone de dépôt
-        nouvelles_en_attente = [
-            m.get("nom") or k
-            for k, m in nouveau_data.get("machines", {}).items()
-            if isinstance(m, dict) and m.get("en_attente_placement")
-               and m.get("type") not in ("TECH_OFFICE", "ENTREE", "SORTIE", "REPOS")
-        ]
-
         # Enregistrer dans l'historique de session
         detail = " | ".join(descriptions)
         self._patches_session.append(detail)
@@ -1013,17 +1354,9 @@ class TabAssistant:
         if ignorees:
             detail_affiche += "\n" + "\n".join(f"⏭ ignoré : {d}" for d in ignorees)
 
-        msg_fin = "Relancez une simulation pour voir l'impact des changements."
-        if nouvelles_en_attente:
-            noms = ", ".join(nouvelles_en_attente)
-            msg_fin = (
-                f"📦  {noms} a été ajouté à la zone de dépôt du plan.\n"
-                "👉  Allez dans l'onglet Configuration, faites glisser l'appareil "
-                "à sa place dans le labo, puis relancez une simulation."
-            )
-
         self._afficher_message_systeme(
-            f"Configuration mise à jour :\n{detail_affiche}\n{msg_fin}",
+            f"Configuration mise à jour :\n{detail_affiche}\n"
+            "Relancez une simulation pour voir l'impact des changements.",
             tag="patch",
         )
 

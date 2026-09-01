@@ -22,12 +22,6 @@ _TAILLES_DEFAUT = {
     "REPOS":            (1, 1),
 }
 
-# Zone de dépôt pour les appareils ajoutés par l'IA (en attente de placement)
-_STAGING_X      = 2500   # limite gauche (px) de la zone de dépôt
-_STAGING_COL_X  = 2600   # x du centre de la 1re colonne de dépôt
-_STAGING_ROW_Y  = 125    # y du centre de la 1re ligne de dépôt
-_STAGING_STEP   = 110    # espacement vertical entre machines en attente
-
 class TabConfig:
     def __init__(self, parent, config_manager):
         self.parent = parent
@@ -50,21 +44,9 @@ class TabConfig:
         # --- GAUCHE : LE PLAN ---
         self.canvas_frame = ttk.Frame(self.paned)
         self.paned.add(self.canvas_frame, weight=4)
-
+        
         self.canvas = tk.Canvas(self.canvas_frame, bg="#ffffff", scrollregion=(0, 0, 3000, 2000))
-        _h_scroll = ttk.Scrollbar(self.canvas_frame, orient="horizontal", command=self.canvas.xview)
-        _v_scroll = ttk.Scrollbar(self.canvas_frame, orient="vertical",   command=self.canvas.yview)
-        self.canvas.configure(xscrollcommand=_h_scroll.set, yscrollcommand=_v_scroll.set)
-        self.canvas_frame.grid_rowconfigure(0, weight=1)
-        self.canvas_frame.grid_columnconfigure(0, weight=1)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        _v_scroll.grid(row=0, column=1, sticky="ns")
-        _h_scroll.grid(row=1, column=0, sticky="ew")
-        # Molette : vertical / Shift+molette : horizontal
-        self.canvas.bind("<MouseWheel>",
-            lambda e: self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
-        self.canvas.bind("<Shift-MouseWheel>",
-            lambda e: self.canvas.xview_scroll(int(-1 * (e.delta / 120)), "units"))
+        self.canvas.pack(expand=True, fill="both")
         
         # --- DROITE : OUTILS ---
         self.edit_frame = ttk.Frame(self.paned, padding=15)
@@ -80,7 +62,6 @@ class TabConfig:
         self.canvas.bind("<Button-1>",        self.on_canvas_click)
         self.canvas.bind("<B1-Motion>",       self.on_canvas_drag)
         self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
-        self.canvas.bind("<Button-3>",        self._on_canvas_right_click)  # clic droit → supprimer
 
     def setup_ui_elements(self):
         ttk.Label(self.edit_frame, text="🏗️ ÉDITEUR MAGsim", font=theme.FONT_TITLE).pack(pady=(0, 10))
@@ -182,61 +163,6 @@ class TabConfig:
         FenetreRH(self.parent, self.config_manager,
                   refresh_callback=self._refresh_plan_machines)
 
-    def _refresh_plan_machines(self):
-        """Redessine uniquement les sprites machines (après ajout/suppression tech)."""
-        self.canvas.delete("machine")
-        self.canvas.delete("staging")
-        machines = self.config_manager.get_machines()
-        for nom, m in machines.items():
-            if m["type"] == "TECH_OFFICE":
-                continue
-            self.dessiner_bloc_machine(
-                m["coords"]["x"], m["coords"]["y"], nom, m["type"],
-                m.get("largeur_cases"), m.get("hauteur_cases"))
-        self._dessiner_zone_staging()
-
-    def _dessiner_zone_staging(self):
-        """Dessine la zone de dépôt (coin supérieur droit) et les appareils en attente."""
-        self.canvas.delete("staging")
-        pending = {
-            nom: m for nom, m in self.config_manager.data.get("machines", {}).items()
-            if isinstance(m, dict) and m.get("en_attente_placement")
-               and m.get("type") not in ("TECH_OFFICE", "ENTREE", "SORTIE", "REPOS")
-        }
-        if not pending:
-            return
-
-        # Fond de la zone de dépôt
-        self.canvas.create_rectangle(
-            _STAGING_X, 0, 3000, 400,
-            fill="#fff8e1", outline="#f39c12", width=2, dash=(8, 4),
-            tags="staging",
-        )
-        self.canvas.create_text(
-            _STAGING_X + 10, 12,
-            text="📦  Appareils à placer — faites-les glisser dans le labo",
-            anchor="nw", fill="#e67e22",
-            font=("Segoe UI", 9, "bold"),
-            tags="staging",
-        )
-
-        # Positionner chaque machine en attente dans la zone, en colonne
-        for idx, (nom, m) in enumerate(pending.items()):
-            cx = _STAGING_COL_X
-            cy = _STAGING_ROW_Y + idx * _STAGING_STEP
-            larg = m.get("largeur_cases")
-            haut = m.get("hauteur_cases")
-            # Stocker la position visuelle dans le canvas (coords peut être absent)
-            if "coords" not in m:
-                m["coords"] = {}
-            m["coords"]["x"] = cx
-            m["coords"]["y"] = cy
-            self.dessiner_bloc_machine(cx, cy, nom, m["type"], larg, haut, en_attente=True)
-
-        # Faire défiler le canvas pour montrer la zone de dépôt
-        self.canvas.after(50, lambda: self.canvas.xview_moveto(_STAGING_X / 3000))
-
-
     def set_mode(self, mode):
         self.mode = mode
         self.canvas.config(cursor="crosshair" if mode != "SELECT" else "")
@@ -298,8 +224,9 @@ class TabConfig:
             if bbox:
                 curr_cx = (bbox[0] + bbox[2]) / 2
                 curr_cy = (bbox[1] + bbox[3]) / 2
-                machines = self.config_manager.get_machines()
-                m_snap = machines.get(nom, {})
+                # Utiliser le dict brut pour inclure les machines en zone tampon
+                raw_machines = self.config_manager.data.get("machines", {})
+                m_snap = raw_machines.get(nom, {})
                 larg_s = m_snap.get("largeur_cases", 1)
                 haut_s = m_snap.get("hauteur_cases", 1)
                 col = max(0, round(curr_cx / self.grid_size - larg_s / 2))
@@ -308,25 +235,23 @@ class TabConfig:
                 snap_cy = row * self.grid_size + haut_s * self.grid_size / 2
                 # Déplacement résiduel pour aligner précisément
                 self.canvas.move(f"obj_{nom}", snap_cx - curr_cx, snap_cy - curr_cy)
-                # Sauvegarder la nouvelle position
-                machines_all = self.config_manager.data.get("machines", {})
-                if nom in machines_all:
-                    machines_all[nom]["coords"]["x"] = snap_cx
-                    machines_all[nom]["coords"]["y"] = snap_cy
-                    # Si la machine vient d'être glissée hors de la zone de dépôt → retirer le flag
-                    if snap_cx < _STAGING_X and machines_all[nom].get("en_attente_placement"):
-                        del machines_all[nom]["en_attente_placement"]
-                        # Redessiner sans le style "en attente" (fond orange pointillé)
+                # Sauvegarder la nouvelle position (via dict brut pour éviter le filtre get_machines)
+                if nom in raw_machines:
+                    raw_machines[nom].setdefault("coords", {})
+                    raw_machines[nom]["coords"]["x"] = snap_cx
+                    raw_machines[nom]["coords"]["y"] = snap_cy
+                    # Retirer le flag de staging si la machine vient de la zone tampon
+                    if raw_machines[nom].get("en_attente_placement"):
+                        raw_machines[nom].pop("en_attente_placement", None)
+                        # Redessiner en couleur normale (sans tag staging)
                         self.canvas.delete(f"obj_{nom}")
-                        m = machines_all[nom]
-                        self.dessiner_bloc_machine(
-                            snap_cx, snap_cy, nom, m["type"],
-                            m.get("largeur_cases"), m.get("hauteur_cases"),
-                        )
+                        self.dessiner_bloc_machine(snap_cx, snap_cy, nom, raw_machines[nom]["type"],
+                                                   raw_machines[nom].get("largeur_cases"),
+                                                   raw_machines[nom].get("hauteur_cases"))
                         self._dessiner_zone_staging()
                     self.config_manager.sauvegarder()
                     # Si c'est le marqueur REPOS, syncer dans personnel.zone_repos
-                    if machines_all[nom].get("type") == "REPOS":
+                    if raw_machines[nom].get("type") == "REPOS":
                         self.config_manager.data.setdefault("personnel", {})["zone_repos"] = {
                             "x": snap_cx, "y": snap_cy
                         }
@@ -396,7 +321,7 @@ class TabConfig:
         self.config_manager.sauvegarder()
         self.set_mode("SELECT")
 
-    def dessiner_bloc_machine(self, x, y, nom, type_m, largeur_cases=None, hauteur_cases=None, en_attente=False):
+    def dessiner_bloc_machine(self, x, y, nom, type_m, largeur_cases=None, hauteur_cases=None):
         # Taille par défaut selon le type si non précisé
         if largeur_cases is None or hauteur_cases is None:
             larg_def, haut_def = _TAILLES_DEFAUT.get(type_m, (1, 1))
@@ -429,36 +354,12 @@ class TabConfig:
         half_h = hauteur_cases * self.grid_size * 0.45
         tag = f"obj_{nom}"
 
-        extra_tags = ("machine", "staging", tag) if en_attente else ("machine", tag)
-
-        if en_attente:
-            # Style "zone de dépôt" : bordure orange pointillée + fond semi-transparent
-            self.canvas.create_rectangle(
-                x - half_w - 4, y - half_h - 4, x + half_w + 4, y + half_h + 4,
-                outline="#f39c12", width=2, dash=(6, 3), fill="", tags=extra_tags,
-            )
         self.canvas.create_rectangle(x - half_w, y - half_h, x + half_w, y + half_h,
-                                     fill=color, outline="white", width=2, tags=extra_tags)
+                                     fill=color, outline="white", width=2, tags=("machine", tag))
         # Texte plus long si la machine est plus large
         max_chars = 3 + (largeur_cases - 1) * 2
         self.canvas.create_text(x, y, text=nom[:max_chars], fill="white",
-                                font=("Arial", 8, "bold"), tags=extra_tags)
-        if en_attente:
-            self.canvas.create_text(x, y + half_h + 10, text="📍 à placer",
-                                    fill="#e67e22", font=("Arial", 7), tags=extra_tags)
-
-    def _on_canvas_right_click(self, event):
-        """Clic droit : sélectionne la machine sous le curseur et propose de la supprimer."""
-        x_c = self.canvas.canvasx(event.x)
-        y_c = self.canvas.canvasy(event.y)
-        self.selectionner_objet(x_c, y_c)
-        if self.selected_machine:
-            if messagebox.askyesno(
-                "Supprimer",
-                f"Supprimer « {self.selected_machine} » du plan ?",
-                parent=self.parent,
-            ):
-                self.supprimer_selection()
+                                font=("Arial", 8, "bold"), tags=("machine", tag))
 
     def selectionner_objet(self, x, y):
         """Sélectionne la machine sous le curseur (sans ouvrir le popup)."""
@@ -471,8 +372,18 @@ class TabConfig:
                     return
 
     def ouvrir_popup_machine(self):
-        # Inclut les machines en attente (get_machines_avec_pending)
-        toutes = self.config_manager.get_machines_avec_pending()
+        import traceback as _tb
+        try:
+            self._ouvrir_popup_machine_impl()
+        except Exception as _e:
+            print(f"[TabConfig] ERREUR popup machine : {_e}")
+            _tb.print_exc()
+
+    def _ouvrir_popup_machine_impl(self):
+        # Cherche d'abord dans les machines filtrées, puis dans le dict brut
+        toutes = self.config_manager.get_machines()
+        if self.selected_machine not in toutes:
+            toutes = self.config_manager.data.get("machines", {})
         if self.selected_machine not in toutes:
             return
         m_data = toutes[self.selected_machine]
@@ -572,36 +483,12 @@ class TabConfig:
 
             frame_bas_s = ttk.Frame(popup)
             frame_bas_s.pack(side=tk.BOTTOM, fill="x", pady=8, padx=20)
-
-            def _supprimer_depuis_popup_s():
-                if messagebox.askyesno("Supprimer", f"Supprimer {self.selected_machine} ?", parent=popup):
-                    popup.destroy()
-                    self.supprimer_selection()
-
-            tk.Button(frame_bas_s, text="🗑️ Supprimer",
-                      bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
-                      font=theme.FONT_BTN_DEL,
-                      activebackground=theme.BTN_DEL_ACT,
-                      relief="flat", cursor="hand2",
-                      command=_supprimer_depuis_popup_s).pack(side="right", padx=(8, 0))
-            ttk.Button(frame_bas_s, text="💾 SAUVER", command=save_stockage, padding=10).pack(side="right")
+            ttk.Button(frame_bas_s, text="💾 SAUVER", command=save_stockage, padding=10).pack()
 
         elif type_m not in _TYPES_SPECIAUX:
             # --- Bouton SAUVER ancré en bas (avant le contenu pour rester visible) ---
             frame_bas = ttk.Frame(popup)
             frame_bas.pack(side=tk.BOTTOM, fill="x", pady=8, padx=20)
-
-            def _supprimer_depuis_popup():
-                if messagebox.askyesno("Supprimer", f"Supprimer {self.selected_machine} ?", parent=popup):
-                    popup.destroy()
-                    self.supprimer_selection()
-
-            tk.Button(frame_bas, text="🗑️ Supprimer",
-                      bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
-                      font=theme.FONT_BTN_DEL,
-                      activebackground=theme.BTN_DEL_ACT,
-                      relief="flat", cursor="hand2",
-                      command=_supprimer_depuis_popup).pack(side="right", padx=(8, 0))
 
             # --- PARAMÈTRES ---
             f_p = ttk.LabelFrame(popup, text="Capacité & Seuil", padding=10)
@@ -670,11 +557,7 @@ class TabConfig:
                     ent_temps.bind("<FocusOut>", _make_save_temps())
                     ent_temps.bind("<Return>", _make_save_temps())
 
-                    btn_del = tk.Button(f_line, text="✕",
-                                        fg=theme.BTN_DEL_BG, bd=0,
-                                        font=theme.FONT_NOTE,
-                                        activeforeground=theme.BTN_DEL_ACT,
-                                        cursor="hand2",
+                    btn_del = tk.Button(f_line, text="✕", fg="red", bd=0, font=("Arial", 8),
                                         command=lambda n=nom_p: self.delete_proto_confirm(n, popup))
                     btn_del.pack(side="right")
 
@@ -774,7 +657,7 @@ class TabConfig:
                     self.dessiner_bloc_machine(mx, my, self.selected_machine, type_m, new_larg, new_haut)
                 popup.destroy()
 
-            ttk.Button(frame_bas, text="💾 SAUVER MACHINE", command=save, padding=10).pack(side="right")
+            ttk.Button(frame_bas, text="💾 SAUVER MACHINE", command=save, padding=10).pack()
 
         # --- CAS 2 : L'ENTRÉE ---
         elif type_m == "ENTREE":
@@ -966,6 +849,8 @@ class TabConfig:
                 continue
             if not m.get("type") or not m.get("coords"):
                 continue
+            if m.get("en_attente_placement"):
+                continue  # sera dessiné dans la zone de dépôt
             self.dessiner_bloc_machine(
                 m["coords"]["x"], m["coords"]["y"], nom, m["type"],
                 m.get("largeur_cases"), m.get("hauteur_cases"))
@@ -1260,3 +1145,82 @@ class TabConfig:
             duree_validite_min=validite,
         )
         messagebox.showinfo("Succès", f"Procédure '{nom_type}' sauvegardée !")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  Zone de dépôt — machines ajoutées par l'IA en attente de placement
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _dessiner_zone_staging(self):
+        """Dessine le bandeau des machines en attente de placement (ajoutées par l'IA)."""
+        self.canvas.delete("staging")
+
+        en_attente = {
+            k: v for k, v in self.config_manager.data.get("machines", {}).items()
+            if isinstance(v, dict) and v.get("en_attente_placement")
+            and v.get("type") not in ("TECH_OFFICE", "ENTREE", "SORTIE", "REPOS")
+        }
+        if not en_attente:
+            return
+
+        # Bandeau violet en haut à gauche du canvas (coords canvas fixes)
+        MARGE = 10
+        LARG_CASE = self.grid_size
+        HAUT_CASE = self.grid_size
+        COLS = 6
+        PAD = 8
+
+        nb = len(en_attente)
+        nb_lignes = max(1, -(-nb // COLS))  # ceil division
+        bande_h = nb_lignes * (HAUT_CASE + PAD) + 50
+        bande_w = COLS * (LARG_CASE + PAD) + 20
+
+        # Fond du bandeau
+        self.canvas.create_rectangle(
+            MARGE, MARGE, MARGE + bande_w, MARGE + bande_h,
+            fill="#2d1b69", outline="#a78bfa", width=2,
+            tags="staging"
+        )
+        self.canvas.create_text(
+            MARGE + bande_w // 2, MARGE + 12,
+            text="📦  Machines à placer — glissez-les sur le plan",
+            fill="#e9d5ff", font=("Segoe UI", 9, "bold"),
+            tags="staging"
+        )
+
+        for i, (nom, m) in enumerate(en_attente.items()):
+            col_i = i % COLS
+            row_i = i // COLS
+            cx = MARGE + 10 + col_i * (LARG_CASE + PAD) + LARG_CASE // 2
+            cy = MARGE + 30 + row_i * (HAUT_CASE + PAD) + HAUT_CASE // 2
+
+            # Mettre à jour les coords dans le JSON pour que le drag fonctionne
+            if "coords" not in m or m.get("en_attente_placement"):
+                m["coords"] = {"x": cx, "y": cy}
+
+            tag_obj = f"obj_{nom}"
+            self.canvas.create_rectangle(
+                cx - LARG_CASE // 2, cy - HAUT_CASE // 2,
+                cx + LARG_CASE // 2, cy + HAUT_CASE // 2,
+                fill="#7c3aed", outline="#c4b5fd", width=2,
+                tags=("machine", "staging", tag_obj)
+            )
+            max_chars = 7
+            self.canvas.create_text(
+                cx, cy, text=nom[:max_chars],
+                fill="white", font=("Arial", 7, "bold"),
+                tags=("machine", "staging", tag_obj)
+            )
+
+    def _refresh_plan_machines(self):
+        """Redessine uniquement les sprites machines (après ajout/suppression tech)."""
+        self.canvas.delete("machine")
+        machines = self.config_manager.get_machines()
+        for nom, m in machines.items():
+            if m["type"] == "TECH_OFFICE":
+                continue
+            if m.get("en_attente_placement"):
+                continue  # sera dessiné par _dessiner_zone_staging
+            self.dessiner_bloc_machine(
+                m["coords"]["x"], m["coords"]["y"], nom, m["type"],
+                m.get("largeur_cases"), m.get("hauteur_cases"))
+        self._dessiner_zone_staging()

@@ -96,6 +96,7 @@ def _make_tab(cm):
     mock_canvas.winfo_exists.return_value = False
     with (
         patch("ui.tab_live.tk.Canvas", return_value=mock_canvas),
+        patch("ui.tab_live.tk.BooleanVar", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Scrollbar", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Frame", return_value=MagicMock()),
         patch("ui.tab_live.ttk.Button", return_value=MagicMock()),

@@ -3182,7 +3182,8 @@ class TabLive:
                         tat = (now - tube["arrivee"]) + machine_simpy * 9
                         # Si la deque est pleine, soustraire l'élément qui va être évincé
                         # pour garder _transit_sum cohérent sans sum() O(n).
-                        if len(self.transit_times_raw) == self.transit_times_raw.maxlen:
+                        if (getattr(self.transit_times_raw, "maxlen", None)
+                                and len(self.transit_times_raw) == self.transit_times_raw.maxlen):
                             self._transit_sum -= self.transit_times_raw[0]
                         self.transit_times_raw.append(tat)
                         self._transit_sum += tat
@@ -3418,6 +3419,7 @@ class TabLive:
         return trouver_prochaine_machine(
             tube, machines, self.machine_queues, virtual_queues,
             paillasse_occupee=self.paillasse_analyste,
+            reserved_slots=self.machine_slots_reserved,
         )
 
     def traiter_batch_machine(self, nom_machine, machine, force_batch_size=None):

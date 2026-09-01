@@ -114,7 +114,12 @@ def construire_section_memoire(nom_labo=""):
     ]
     if sessions_labo:
         recentes = sessions_labo[-MAX_SESSIONS_INJECTEES:]
-        lignes.append("== Historique des conversations précédentes ==")
+        lignes.append("== Historique des conversations précédentes (contexte passé — PAS la question actuelle) ==")
+        lignes.append(
+            "Ces informations décrivent DES SESSIONS TERMINÉES. Ne les traite jamais comme "
+            "la demande en cours. Le gestionnaire te parle maintenant d'autre chose : "
+            "réponds UNIQUEMENT au dernier message qu'il vient d'envoyer."
+        )
         for s in reversed(recentes):
             date     = s.get("date", "?")
             patches  = s.get("patches_appliques", [])
@@ -124,7 +129,7 @@ def construire_section_memoire(nom_labo=""):
             if patches:
                 lignes.append(f"  Modifications appliquées ce jour-là : {' | '.join(patches)}")
             if qs:
-                lignes.append(f"  Sujets abordés : {' | '.join(qs[:3])}")
+                lignes.append(f"  Sujets abordés (terminé, non pertinent aujourd'hui sauf si le gestionnaire y revient explicitement) : {' | '.join(qs[:3])}")
         lignes.append("")
 
     # ── Exemples validés par ce gestionnaire ──
@@ -135,11 +140,17 @@ def construire_section_memoire(nom_labo=""):
     ]
     if exemples_labo:
         recents = exemples_labo[-MAX_EXEMPLES_INJECTES:]
-        lignes.append("== Exemples de réponses validées par ce gestionnaire ==")
-        lignes.append("(Ces exemples ont été approuvés — reproduis ce style.)")
+        lignes.append("== Exemples de TON et de STYLE approuvés par ce gestionnaire (PAS des réponses à réutiliser) ==")
+        lignes.append(
+            "IMPORTANT : ces exemples servent UNIQUEMENT à calibrer ton ton, ta longueur de phrase "
+            "et ton niveau de langage. Ils correspondaient à d'ANCIENNES questions, sur d'anciennes "
+            "données de simulation. N'en recopie JAMAIS le contenu factuel ou les chiffres — "
+            "génère toujours une réponse neuve basée sur le dernier message du gestionnaire et "
+            "les métriques ACTUELLES."
+        )
         for ex in recents:
-            lignes.append(f"Gestionnaire : « {ex['question']} »")
-            lignes.append(f"Bonne réponse : {ex['reponse']}")
+            lignes.append(f"Ancien exemple — Gestionnaire : « {ex['question']} »")
+            lignes.append(f"Ancien exemple — Réponse (style à imiter, PAS le contenu) : {ex['reponse']}")
             lignes.append("")
 
     return "\n".join(lignes)
@@ -152,6 +163,173 @@ def nb_exemples(nom_labo=""):
     if nom_labo:
         return len([e for e in exemples if not e.get("labo") or e.get("labo") == nom_labo])
     return len(exemples)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  Profil utilisateur — fichier Markdown lisible, enrichi au fil des échanges
+# ─────────────────────────────────────────────────────────────────────────────
+
+PROFIL_MD_PATH = "data/profil_utilisateur.md"
+MAX_NOTES_PAR_SECTION = 12
+SEUIL_CONSOLIDATION  = 6   # au-delà, l'IA fusionne les notes proches de la section
+
+_SECTIONS_PROFIL = [
+    "Style de communication",
+    "Humour",
+    "Centres d'intérêt",
+    "Contexte professionnel",
+    "Préférences diverses",
+]
+
+_ENTETE_PROFIL_MD = (
+    "# Profil du gestionnaire\n\n"
+    "Ce fichier est enrichi automatiquement par l'assistant IA au fil des conversations.\n"
+    "Il permet d'ajuster le ton, l'humour et le style des réponses au fil du temps.\n"
+)
+
+
+def _lire_profil_md_brut():
+    if os.path.exists(PROFIL_MD_PATH):
+        try:
+            with open(PROFIL_MD_PATH, "r", encoding="utf-8") as f:
+                return f.read()
+        except Exception:
+            pass
+    return _ENTETE_PROFIL_MD + "".join(f"\n## {s}\n" for s in _SECTIONS_PROFIL)
+
+
+def lire_profil_md():
+    """Retourne le contenu complet du profil Markdown (crée le fichier si absent)."""
+    contenu = _lire_profil_md_brut()
+    if not os.path.exists(PROFIL_MD_PATH):
+        os.makedirs(os.path.dirname(PROFIL_MD_PATH), exist_ok=True)
+        with open(PROFIL_MD_PATH, "w", encoding="utf-8") as f:
+            f.write(contenu)
+    return contenu
+
+
+def ajouter_note_profil(section: str, note: str):
+    """Ajoute une note (une ligne) sous la section donnée du profil Markdown.
+
+    Ignore silencieusement si une note similaire existe déjà (évite les doublons
+    exacts ET les reformulations proches) ou si la section n'est pas reconnue.
+    Limite chaque section à MAX_NOTES_PAR_SECTION lignes (les plus anciennes retirées).
+    """
+    if section not in _SECTIONS_PROFIL or not note.strip():
+        return
+    note = note.strip().rstrip(".")
+    contenu = _lire_profil_md_brut()
+    lignes  = contenu.splitlines()
+
+    # Localiser la section
+    try:
+        idx_section = next(i for i, l in enumerate(lignes) if l.strip() == f"## {section}")
+    except StopIteration:
+        lignes.append(f"\n## {section}")
+        idx_section = len(lignes) - 1
+
+    # Trouver la fin de la section (prochain "## " ou fin de fichier)
+    idx_fin = len(lignes)
+    for i in range(idx_section + 1, len(lignes)):
+        if lignes[i].startswith("## "):
+            idx_fin = i
+            break
+
+    notes_existantes = [l for l in lignes[idx_section + 1:idx_fin] if l.strip().startswith("- ")]
+    if _note_similaire_existe(note, notes_existantes):
+        return  # déjà noté (exact ou reformulation proche)
+
+    notes_existantes.append(f"- {note}")
+    notes_existantes = notes_existantes[-MAX_NOTES_PAR_SECTION:]
+
+    nouvelles_lignes = lignes[:idx_section + 1] + [""] + notes_existantes + [""] + lignes[idx_fin:]
+    os.makedirs(os.path.dirname(PROFIL_MD_PATH), exist_ok=True)
+    with open(PROFIL_MD_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(nouvelles_lignes).strip() + "\n")
+
+
+def _note_similaire_existe(note: str, notes_existantes: list) -> bool:
+    """Détecte les doublons exacts ET les reformulations proches (ratio de similarité)."""
+    import difflib
+    note_low = note.lower()
+    for l in notes_existantes:
+        texte = l.strip().lstrip("- ").lower()
+        if note_low in texte or texte in note_low:
+            return True
+        if difflib.SequenceMatcher(None, note_low, texte).ratio() > 0.55:
+            return True
+    return False
+
+
+def nb_notes_section(section: str) -> int:
+    """Retourne le nombre de notes actuellement enregistrées dans une section."""
+    contenu = _lire_profil_md_brut()
+    lignes  = contenu.splitlines()
+    try:
+        idx_section = next(i for i, l in enumerate(lignes) if l.strip() == f"## {section}")
+    except StopIteration:
+        return 0
+    idx_fin = len(lignes)
+    for i in range(idx_section + 1, len(lignes)):
+        if lignes[i].startswith("## "):
+            idx_fin = i
+            break
+    return len([l for l in lignes[idx_section + 1:idx_fin] if l.strip().startswith("- ")])
+
+
+def lister_notes_section(section: str) -> list:
+    """Retourne la liste des notes (texte, sans le tiret) d'une section."""
+    contenu = _lire_profil_md_brut()
+    lignes  = contenu.splitlines()
+    try:
+        idx_section = next(i for i, l in enumerate(lignes) if l.strip() == f"## {section}")
+    except StopIteration:
+        return []
+    idx_fin = len(lignes)
+    for i in range(idx_section + 1, len(lignes)):
+        if lignes[i].startswith("## "):
+            idx_fin = i
+            break
+    return [l.strip().lstrip("- ").strip() for l in lignes[idx_section + 1:idx_fin] if l.strip().startswith("- ")]
+
+
+def remplacer_notes_section(section: str, notes: list):
+    """Remplace intégralement les notes d'une section (utilisé par la consolidation IA)."""
+    if section not in _SECTIONS_PROFIL:
+        return
+    contenu = _lire_profil_md_brut()
+    lignes  = contenu.splitlines()
+    try:
+        idx_section = next(i for i, l in enumerate(lignes) if l.strip() == f"## {section}")
+    except StopIteration:
+        lignes.append(f"\n## {section}")
+        idx_section = len(lignes) - 1
+    idx_fin = len(lignes)
+    for i in range(idx_section + 1, len(lignes)):
+        if lignes[i].startswith("## "):
+            idx_fin = i
+            break
+    notes_propres = [f"- {n.strip().lstrip('- ').strip()}" for n in notes if n.strip()]
+    notes_propres = notes_propres[-MAX_NOTES_PAR_SECTION:]
+    nouvelles_lignes = lignes[:idx_section + 1] + [""] + notes_propres + [""] + lignes[idx_fin:]
+    os.makedirs(os.path.dirname(PROFIL_MD_PATH), exist_ok=True)
+    with open(PROFIL_MD_PATH, "w", encoding="utf-8") as f:
+        f.write("\n".join(nouvelles_lignes).strip() + "\n")
+
+
+def construire_section_profil_md():
+    """Retourne le contenu du profil formaté pour injection dans le prompt système.
+    Retourne une chaîne vide si aucune note n'a encore été enregistrée.
+    """
+    contenu = lire_profil_md()
+    if not any(l.strip().startswith("- ") for l in contenu.splitlines()):
+        return ""
+    return (
+        "== Profil du gestionnaire (appris au fil des conversations) ==\n"
+        "Adapte ton ton, ton humour et ton style de réponse à ces observations :\n"
+        f"{contenu.strip()}\n"
+    )
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

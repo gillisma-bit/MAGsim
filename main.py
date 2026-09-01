@@ -1,3 +1,16 @@
+# ── DLLs NVIDIA (cuDNN, cuBLAS) — doit être avant tout import ctranslate2 ──────
+import os as _os, sys as _sys
+for _sp in _sys.path:
+    _nvidia_root = _os.path.join(_sp, "nvidia")
+    if _os.path.isdir(_nvidia_root):
+        _bins = [_os.path.join(_nvidia_root, _s, "bin")
+                 for _s in _os.listdir(_nvidia_root)
+                 if _os.path.isdir(_os.path.join(_nvidia_root, _s, "bin"))]
+        if _bins:
+            _os.environ["PATH"] = ";".join(_bins) + ";" + _os.environ.get("PATH", "")
+        break
+# ──────────────────────────────────────────────────────────────────────────────
+
 import tkinter as tk
 from tkinter import ttk
 from core.config_manager import ConfigManager
@@ -62,7 +75,8 @@ class MAGsimApp:
         self.tab_diagnostic = TabDiagnostic(self.tab_diagnostic_frame, self.config_manager,
                                             tab_live_ref=self.tab_live)
         self.tab_assistant  = TabAssistant(self.tab_assistant_frame, self.config_manager,
-                                           tab_live_ref=self.tab_live)
+                                           tab_live_ref=self.tab_live,
+                                           tab_config_ref=self.tab_config)
 
         # Rafraîchir le diagnostic quand l'onglet devient actif
         self.notebook.bind("<<NotebookTabChanged>>", self._on_tab_changed)
