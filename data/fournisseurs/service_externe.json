@@ -1,0 +1,93 @@
+{
+    "id": "service_externe",
+    "nom": "Services Externes",
+    "couleur": "#f39c12",
+    "icone": "🏥",
+    "position_canvas": {
+        "x": 1820,
+        "y": 160
+    },
+    "duree_trajet_min": 3.3,
+    "actif": true,
+    "frequence_base": 90.0,
+    "gamma_k": 1.2,
+    "heure_debut": 7.0,
+    "pct_urgent": 0.15,
+    "_commentaire_flux": "Tubes provenant d'institutions partenaires. Arrivées groupées par tournée de coursier. Rare pic de demande (collecte spéciale). Les retards de collecte sont gérés par le service navette.",
+    "surge_proba": 0.005,
+    "surge_facteur": 2.5,
+    "surge_duree_min": 30,
+    "surge_duree_max": 90,
+    "pause_proba": 0.0,
+    "pause_duree_min": 0,
+    "pause_duree_max": 0,
+    "batch_proba": 0.4,
+    "batch_min": 5,
+    "batch_max": 20,
+    "profil_horaire": [
+        [
+            0.0,
+            0.0
+        ],
+        [
+            7.0,
+            0.3
+        ],
+        [
+            9.0,
+            1.0
+        ],
+        [
+            11.0,
+            0.8
+        ],
+        [
+            14.0,
+            1.2
+        ],
+        [
+            16.0,
+            0.6
+        ],
+        [
+            18.0,
+            0.1
+        ],
+        [
+            24.0,
+            0.0
+        ]
+    ],
+    "types_tubes_emis": [],
+    "description": "Tubes provenant d'autres institutions (cliniques partenaires, CLSC, etc.)",
+    "chemin_waypoints": [
+        [
+            2020,
+            202
+        ],
+        [
+            1320,
+            202
+        ],
+        [
+            1000,
+            200
+        ],
+        [
+            1000,
+            320
+        ],
+        [
+            600,
+            320
+        ],
+        [
+            600,
+            320
+        ],
+        [
+            600,
+            320
+        ]
+    ]
+}

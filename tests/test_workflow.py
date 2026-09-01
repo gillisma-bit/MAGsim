@@ -31,7 +31,7 @@ MACHINES = {
     },
     "ct2": {
         "type": "Centrifugeuse",
-        "capacite": 4, "file_max": 10,
+        "capacite": 10, "file_max": 10,
         "protocoles": {"centi1": {"temps": 30}},
         "coords": {"x": 675, "y": 675},
     },
@@ -128,17 +128,71 @@ class TestMachinesPlaines:
 
 
 class TestFillFirst:
-    def test_prefere_machine_proche_du_seuil(self):
-        """fill-first : choisit la machine qui a le moins de place restante (plus proche de capacite)."""
+    def test_prefere_machine_plus_petite_capacite_quand_toutes_vides(self):
+        """Batch-first : à slots restants égaux... non, ct1(rem=4) < ct2(rem=10) → ct1 gagne.
+        MACHINES : ct1 cap=4, ct2 cap=10. Quand les deux sont vides,
+        ct1 a moins de slots restants → on la remplit en 4 tubes au lieu de 10.
+        """
         tube = make_tube()
-        # ct1 a 3 tubes sur 4 (1 place libre), ct2 a 0 tubes (4 places libres)
-        # fill-first → doit choisir ct1 (score = 4-3 = 1 < 4-0 = 4)
+        _, nom, _ = trouver_prochaine_machine(tube, MACHINES, {})
+        assert nom == "ct1", (
+            f"Batch-first devrait choisir ct1 (remaining=4 < ct2 remaining=10) quand les deux "
+            f"sont vides, obtenu '{nom}'"
+        )
+
+    def test_continue_a_remplir_machine_en_cours(self):
+        """Si ct1 est déjà partiellement remplie (remaining=1), on la complète avant ct2.
+        ct1 à 3/4 (remaining=1) vs ct2 à 0/10 (remaining=10) → ct1 gagne."""
+        tube = make_tube()
         machine_queues = {
-            "ct1": [{}, {}, {}],  # 3/4 remplie
-            "ct2": [],            # vide
+            "ct1": [{}, {}, {}],  # 3/4 = remaining 1
+            "ct2": [],            # 0/10 = remaining 10
         }
         _, nom, _ = trouver_prochaine_machine(tube, MACHINES, machine_queues)
-        assert nom == "ct1", f"fill-first devrait choisir ct1 (presque pleine), obtenu '{nom}'"
+        assert nom == "ct1", (
+            f"ct1 n'a plus qu'1 slot avant cycle (remaining=1 vs ct2 remaining=10), "
+            f"doit être complétée en premier, obtenu '{nom}'"
+        )
+
+    def test_prefere_machine_au_seuil_le_plus_proche(self):
+        """Parmi deux machines non vides, préfère celle au seuil le plus proche.
+        ct1 2/4 (remaining=2) vs ct2 5/10 (remaining=5) → ct1 gagne."""
+        tube = make_tube()
+        machine_queues = {
+            "ct1": [{}, {}],             # 2/4 → remaining 2
+            "ct2": [{}, {}, {}, {}, {}], # 5/10 → remaining 5
+        }
+        _, nom, _ = trouver_prochaine_machine(tube, MACHINES, machine_queues)
+        assert nom == "ct1", (
+            f"ct1 est plus proche du seuil (remaining=2 vs ct2 remaining=5), "
+            f"doit être choisie, obtenu '{nom}'"
+        )
+
+    def test_4_tubes_tous_en_ct1_via_virtual_queues(self):
+        """Scénario utilisateur : 4 tubes de l'entrée, ct1 cap=4, ct2 cap=10, toutes vides.
+        Les 4 tubes doivent TOUS aller en ct1 pour déclencher le cycle immédiatement,
+        plutôt que d'être répartis ct1:1/ct2:3 qui laisse les deux machines en attente.
+        """
+        virtual_queues = {}
+        destinations = []
+        for _ in range(4):
+            tube = make_tube()
+            _, nom, _ = trouver_prochaine_machine(tube, MACHINES, {}, virtual_queues)
+            destinations.append(nom)
+            virtual_queues[nom] = virtual_queues.get(nom, 0) + 1
+        assert all(d == "ct1" for d in destinations), (
+            f"4 tubes devraient tous aller en ct1 (cap=4) pour déclencher le cycle : "
+            f"obtenu {destinations}"
+        )
+
+    def test_debordement_vers_ct2_quand_ct1_pleine(self):
+        """Après ct1 pleine (via virtual_queues), le 5e tube déborde vers ct2."""
+        virtual_queues = {"ct1": 4}   # ct1 saturée (cap=4)
+        tube = make_tube()
+        _, nom, _ = trouver_prochaine_machine(tube, MACHINES, {}, virtual_queues)
+        assert nom == "ct2", (
+            f"ct1 pleine → débordement vers ct2, obtenu '{nom}'"
+        )
 
     def test_virtual_queues_bloquent_attribution(self):
         """

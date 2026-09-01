@@ -4,8 +4,8 @@
         "ct1": {
             "type": "Centrifugeuse",
             "coords": {
-                "x": 825,
-                "y": 675
+                "x": 1075.0,
+                "y": 525.0
             },
             "capacite": 4,
             "protocoles": {
@@ -16,15 +16,16 @@
             },
             "seuil": 1,
             "file_max": 10,
-            "tmep": 360,
-            "tmr": 30,
-            "delai_max_avant_degrad": 240
+            "tmep": 200.0,
+            "tmr": 0.5,
+            "delai_max_avant_degrad": 240,
+            "tech_requis_poste": false
         },
         "au1": {
             "type": "Automate",
             "coords": {
-                "x": 475,
-                "y": 125
+                "x": 275.0,
+                "y": 100.0
             },
             "capacite": 10,
             "protocoles": {
@@ -35,9 +36,12 @@
             },
             "seuil": 1,
             "file_max": 20,
-            "tmep": 480,
-            "tmr": 60,
-            "delai_max_avant_degrad": 360
+            "tmep": 6000.0,
+            "tmr": 60.0,
+            "delai_max_avant_degrad": 360,
+            "tech_requis_poste": false,
+            "largeur_cases": 3,
+            "hauteur_cases": 2
         },
         "IN": {
             "type": "ENTREE",
@@ -47,7 +51,7 @@
             },
             "capacite": 4,
             "protocoles": {},
-            "frequence": 5.0,
+            "frequence": 10.0,
             "gamma_k": 2.0,
             "heure_debut": 7.0,
             "pct_mauvais_prelevements": 0.02,
@@ -66,19 +70,19 @@
                 ],
                 [
                     8.0,
-                    1.5
+                    1.1
                 ],
                 [
                     9.0,
-                    1.8
+                    1.3
                 ],
                 [
                     10.0,
-                    1.4
+                    1.2
                 ],
                 [
                     11.0,
-                    5.0
+                    1.1
                 ],
                 [
                     12.0,
@@ -86,7 +90,7 @@
                 ],
                 [
                     13.0,
-                    1.5
+                    1.2
                 ],
                 [
                     14.0,
@@ -118,26 +122,17 @@
                 ]
             ]
         },
-        "OUT": {
-            "type": "SORTIE",
-            "coords": {
-                "x": 125,
-                "y": 675
-            },
-            "capacite": 4,
-            "protocoles": {}
-        },
         "pa1": {
             "type": "Paillasse",
             "tech_requis_poste": true,
             "coords": {
-                "x": 675,
-                "y": 425
+                "x": 650.0,
+                "y": 325.0
             },
             "capacite": 5,
             "protocoles": {
                 "culot 1": {
-                    "temps": 100,
+                    "temps": 30,
                     "type_compatible": "Paillasse"
                 },
                 "surnageant1": {
@@ -147,15 +142,15 @@
             },
             "seuil": 1,
             "file_max": 25,
-            "tmep": 720,
-            "tmr": 20,
-            "delai_max_avant_degrad": 300
+            "delai_max_avant_degrad": 300,
+            "largeur_cases": 2,
+            "hauteur_cases": 1
         },
         "b1": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 1075,
-                "y": 225
+                "x": 975.0,
+                "y": 875.0
             },
             "capacite": 4,
             "protocoles": {},
@@ -163,14 +158,16 @@
             "experience": 3,
             "age": 18,
             "seuil_charge_fatigue": 0.7,
-            "taux_montee_fatigue": 0.01,
-            "capacite_max_tubes": 10
+            "taux_montee_fatigue": 0.001,
+            "capacite_max_tubes": 10,
+            "nom": "Gustave",
+            "taux_recuperation_nuit": 0.15
         },
         "b2": {
             "type": "TECH_OFFICE",
             "coords": {
-                "x": 925,
-                "y": 125
+                "x": 975.0,
+                "y": 875.0
             },
             "capacite": 4,
             "file_max": 4,
@@ -180,22 +177,24 @@
             "experience": 4,
             "age": 45,
             "seuil_charge_fatigue": 0.75,
-            "taux_montee_fatigue": 0.008,
-            "capacite_max_tubes": 12
+            "taux_montee_fatigue": 0.003,
+            "capacite_max_tubes": 12,
+            "nom": "Antoine",
+            "taux_recuperation_nuit": 0.15
         },
         "pa2": {
             "type": "Paillasse",
             "tech_requis_poste": true,
             "coords": {
-                "x": 475,
-                "y": 325
+                "x": 450.0,
+                "y": 325.0
             },
             "capacite": 5,
             "file_max": 20,
             "seuil": 1,
             "protocoles": {
                 "culot 1": {
-                    "temps": 100,
+                    "temps": 30,
                     "type_compatible": "Paillasse"
                 },
                 "surnageant1": {
@@ -203,18 +202,76 @@
                     "type_compatible": "Paillasse"
                 }
             },
-            "tmep": 720,
-            "tmr": 20,
-            "delai_max_avant_degrad": 300
+            "delai_max_avant_degrad": 300,
+            "largeur_cases": 2,
+            "hauteur_cases": 1
         },
         "ct2": {
             "type": "Centrifugeuse",
             "coords": {
-                "x": 675,
-                "y": 675
+                "x": 1075.0,
+                "y": 625.0
             },
             "capacite": 10,
-            "file_max": 30,
+            "protocoles": {},
+            "seuil": 1,
+            "file_max": 10,
+            "tmep": 200.0,
+            "tmr": 0.5,
+            "delai_max_avant_degrad": 240,
+            "tech_requis_poste": false,
+            "largeur_cases": 1,
+            "hauteur_cases": 1
+        },
+        "OUT": {
+            "type": "SORTIE",
+            "coords": {
+                "x": 125,
+                "y": 925
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {}
+        },
+        "tech nuit": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 975.0,
+                "y": 875.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "nom": "Carl",
+            "experience": 3,
+            "age": 35,
+            "pct_erreur_tech": 0.0,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.01,
+            "taux_recuperation_nuit": 0.15,
+            "capacite_max_tubes": 10
+        },
+        "tech": {
+            "type": "REPOS",
+            "coords": {
+                "x": 1075,
+                "y": 975
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {}
+        },
+        "centri3": {
+            "type": "Centrifugeuse",
+            "coords": {
+                "x": 875.0,
+                "y": 675.0
+            },
+            "capacite": 4,
+            "file_max": 4,
             "seuil": 1,
             "protocoles": {
                 "centi1": {
@@ -222,9 +279,125 @@
                     "type_compatible": "Centrifugeuse"
                 }
             },
-            "tmep": 360,
-            "tmr": 30,
-            "delai_max_avant_degrad": 240
+            "largeur_cases": 1,
+            "hauteur_cases": 1,
+            "tech_requis_poste": false
+        },
+        "frigo 4degrés": {
+            "type": "Réfrigérateur",
+            "coords": {
+                "x": 150.0,
+                "y": 700.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "largeur_cases": 2,
+            "hauteur_cases": 2
+        },
+        "laveur plaque 32 puits": {
+            "type": "Laveur de plaque",
+            "coords": {
+                "x": 650.0,
+                "y": 675.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "largeur_cases": 2,
+            "hauteur_cases": 1
+        },
+        "lecteur HL": {
+            "type": "Lecteur de plaque",
+            "coords": {
+                "x": 450.0,
+                "y": 675.0
+            },
+            "capacite": 4,
+            "file_max": 4,
+            "seuil": 1,
+            "protocoles": {},
+            "largeur_cases": 2,
+            "hauteur_cases": 1
+        },
+        "poste 3": {
+            "type": "Paillasse",
+            "coords": {
+                "x": 650.0,
+                "y": 425.0
+            },
+            "capacite": 5,
+            "file_max": 20,
+            "seuil": 1,
+            "protocoles": {
+                "culot 1": {
+                    "temps": 60,
+                    "type_compatible": "Paillasse"
+                },
+                "surnageant1": {
+                    "temps": 60,
+                    "type_compatible": "Paillasse"
+                }
+            },
+            "largeur_cases": 2,
+            "hauteur_cases": 1,
+            "tech_requis_poste": true,
+            "disponibilite": 100
+        },
+        "poste 4": {
+            "type": "Paillasse",
+            "coords": {
+                "x": 450.0,
+                "y": 425.0
+            },
+            "capacite": 1,
+            "file_max": 20,
+            "seuil": 1,
+            "protocoles": {
+                "culot 1": {
+                    "temps": 30,
+                    "type_compatible": "Paillasse"
+                }
+            },
+            "largeur_cases": 2,
+            "hauteur_cases": 1,
+            "tech_requis_poste": true
+        },
+        "au2": {
+            "type": "Automate",
+            "coords": {
+                "x": 700.0,
+                "y": 125.0
+            },
+            "capacite": 50,
+            "protocoles": {},
+            "seuil": 1,
+            "file_max": 20,
+            "tmep": 6000.0,
+            "tmr": 60.0,
+            "delai_max_avant_degrad": 360,
+            "tech_requis_poste": false,
+            "largeur_cases": 2,
+            "hauteur_cases": 1
+        },
+        "b3": {
+            "type": "TECH_OFFICE",
+            "coords": {
+                "x": 975.0,
+                "y": 875.0
+            },
+            "capacite": 4,
+            "protocoles": {},
+            "pct_erreur_tech": 0.08,
+            "experience": 1,
+            "age": 30,
+            "seuil_charge_fatigue": 0.7,
+            "taux_montee_fatigue": 0.001,
+            "capacite_max_tubes": 10,
+            "nom": "Juliette",
+            "taux_recuperation_nuit": 0.15
         }
     },
     "sol": {
@@ -266,8 +439,6 @@
         "23_15": "WALL",
         "22_15": "WALL",
         "21_15": "WALL",
-        "20_15": "WALL",
-        "19_15": "WALL",
         "18_15": "WALL",
         "17_15": "WALL",
         "16_15": "WALL",
@@ -281,8 +452,6 @@
         "8_15": "WALL",
         "7_15": "WALL",
         "6_15": "WALL",
-        "5_15": "WALL",
-        "4_15": "WALL",
         "3_15": "WALL",
         "2_15": "WALL",
         "1_15": "WALL",
@@ -322,7 +491,6 @@
         "11_2": "COUNTER",
         "10_2": "COUNTER",
         "9_2": "COUNTER",
-        "8_2": "COUNTER",
         "7_2": "COUNTER",
         "6_2": "COUNTER",
         "5_2": "COUNTER",
@@ -337,7 +505,6 @@
         "5_1": "COUNTER",
         "6_1": "COUNTER",
         "7_1": "COUNTER",
-        "8_1": "COUNTER",
         "9_1": "COUNTER",
         "10_1": "COUNTER",
         "11_1": "COUNTER",
@@ -359,30 +526,19 @@
         "21_13": "COUNTER",
         "21_12": "COUNTER",
         "21_11": "COUNTER",
-        "20_13": "COUNTER",
-        "19_13": "COUNTER",
         "18_13": "COUNTER",
         "17_13": "COUNTER",
-        "16_13": "COUNTER",
         "15_13": "COUNTER",
         "14_13": "COUNTER",
-        "13_13": "COUNTER",
         "12_13": "COUNTER",
         "11_13": "COUNTER",
         "10_13": "COUNTER",
-        "9_13": "COUNTER",
-        "8_13": "COUNTER",
-        "7_13": "COUNTER",
         "6_13": "COUNTER",
-        "5_13": "COUNTER",
-        "4_13": "COUNTER",
         "3_13": "COUNTER",
         "1_13": "COUNTER",
         "1_14": "COUNTER",
         "2_14": "COUNTER",
         "3_14": "COUNTER",
-        "4_14": "COUNTER",
-        "5_14": "COUNTER",
         "6_14": "COUNTER",
         "7_14": "COUNTER",
         "8_14": "COUNTER",
@@ -396,8 +552,6 @@
         "16_14": "COUNTER",
         "17_14": "COUNTER",
         "18_14": "COUNTER",
-        "19_14": "COUNTER",
-        "20_14": "COUNTER",
         "6_6": "COUNTER",
         "6_7": "COUNTER",
         "6_8": "COUNTER",
@@ -407,7 +561,6 @@
         "10_8": "COUNTER",
         "11_8": "COUNTER",
         "12_8": "COUNTER",
-        "13_8": "COUNTER",
         "14_8": "COUNTER",
         "14_7": "COUNTER",
         "14_6": "COUNTER",
@@ -426,7 +579,99 @@
         "13_7": "COUNTER",
         "8_6": "COUNTER",
         "21_4": "COUNTER",
-        "18_2": "COUNTER"
+        "18_2": "COUNTER",
+        "0_16": "WALL",
+        "0_17": "WALL",
+        "0_18": "WALL",
+        "0_19": "WALL",
+        "0_20": "WALL",
+        "0_21": "WALL",
+        "1_21": "WALL",
+        "2_21": "WALL",
+        "3_21": "WALL",
+        "4_21": "WALL",
+        "5_21": "WALL",
+        "7_21": "WALL",
+        "8_21": "WALL",
+        "9_21": "WALL",
+        "10_21": "WALL",
+        "11_21": "WALL",
+        "12_21": "WALL",
+        "13_21": "WALL",
+        "14_21": "WALL",
+        "15_21": "WALL",
+        "16_21": "WALL",
+        "17_21": "WALL",
+        "18_21": "WALL",
+        "19_21": "WALL",
+        "20_21": "WALL",
+        "21_21": "WALL",
+        "22_21": "WALL",
+        "23_21": "WALL",
+        "23_20": "WALL",
+        "23_19": "WALL",
+        "23_18": "WALL",
+        "23_17": "WALL",
+        "23_16": "WALL",
+        "8_16": "WALL",
+        "8_17": "WALL",
+        "8_18": "WALL",
+        "9_16": "COUNTER",
+        "10_16": "COUNTER",
+        "11_16": "COUNTER",
+        "12_16": "COUNTER",
+        "13_16": "COUNTER",
+        "14_16": "COUNTER",
+        "15_16": "COUNTER",
+        "16_16": "COUNTER",
+        "17_16": "COUNTER",
+        "18_16": "COUNTER",
+        "18_17": "COUNTER",
+        "17_17": "COUNTER",
+        "16_17": "COUNTER",
+        "15_17": "COUNTER",
+        "14_17": "COUNTER",
+        "13_17": "COUNTER",
+        "12_17": "COUNTER",
+        "11_17": "COUNTER",
+        "10_17": "COUNTER",
+        "9_17": "COUNTER",
+        "21_20": "COUNTER",
+        "22_19": "COUNTER",
+        "22_20": "COUNTER",
+        "6_21": "WALL",
+        "1_16": "COUNTER",
+        "2_16": "COUNTER",
+        "2_17": "COUNTER",
+        "2_18": "COUNTER",
+        "2_19": "COUNTER",
+        "1_19": "COUNTER",
+        "1_20": "COUNTER",
+        "2_20": "COUNTER",
+        "1_18": "COUNTER",
+        "1_17": "COUNTER",
+        "2_13": "COUNTER",
+        "6_16": "COUNTER",
+        "7_16": "COUNTER",
+        "7_17": "COUNTER",
+        "7_18": "COUNTER",
+        "20_20": "COUNTER",
+        "19_20": "COUNTER",
+        "18_20": "COUNTER",
+        "17_20": "COUNTER",
+        "16_20": "COUNTER",
+        "15_20": "COUNTER",
+        "22_18": "COUNTER",
+        "22_17": "COUNTER",
+        "22_16": "COUNTER",
+        "23_8": "WALL",
+        "13_8": "COUNTER",
+        "13_13": "COUNTER",
+        "16_13": "COUNTER",
+        "7_13": "COUNTER",
+        "8_13": "COUNTER",
+        "8_2": "COUNTER",
+        "8_1": "COUNTER"
     },
     "catalog_protocoles": {
         "centi1": {
@@ -434,7 +679,7 @@
             "type_compatible": "Centrifugeuse"
         },
         "culot 1": {
-            "temps": 100,
+            "temps": 30,
             "type_compatible": "Paillasse"
         },
         "surnageant1": {
@@ -455,8 +700,125 @@
                 "proto1"
             ],
             "pct_urgent": 0.05,
-            "taille_lot_min": 3,
-            "taille_lot_max": 8
+            "taille_lot_min": 1,
+            "taille_lot_max": 5,
+            "duree_validite_min": 1000,
+            "duree_validite_max": 380
+        }
+    },
+    "personnel": {
+        "charge_cible_defaut": 0.7,
+        "capacite_journaliere_normale": 150,
+        "seuil_accumulation_alerte": 20,
+        "metres_par_case": 0.5,
+        "jour_debut_simulation": 0,
+        "quarts": [
+            {
+                "nom": "Jour",
+                "heure_debut": 7,
+                "heure_fin": 19,
+                "tech_ids": [
+                    "b1",
+                    "b2"
+                ],
+                "garde": false
+            },
+            {
+                "nom": "Garde nuit",
+                "heure_debut": 19,
+                "heure_fin": 7,
+                "tech_ids": [
+                    "b1"
+                ],
+                "garde": true
+            }
+        ],
+        "pause_rotation_auto": false,
+        "pause_creneau_debut": 12.0,
+        "pause_duree_minutes": 30,
+        "garde_trajet_minutes": 20,
+        "garde_forfait_heures": 3.0,
+        "garde_samedi": "Personne",
+        "garde_dimanche": "Personne",
+        "garde_feries": "Personne"
+    },
+    "horaires": {
+        "Gustave": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false
+        },
+        "Antoine": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false
+        },
+        "Caroline": {
+            "jours": [
+                5,
+                6
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 19.0,
+            "actif": true
+        },
+        "Georges": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4
+            ],
+            "heure_debut": 0.0,
+            "heure_fin": 8.0,
+            "actif": true
+        },
+        "Juliette": {
+            "jours": [
+                5,
+                6
+            ],
+            "heure_debut": 8.0,
+            "heure_fin": 16.0,
+            "actif": true
+        },
+        "Carl": {
+            "jours": [
+                0,
+                1,
+                2,
+                3,
+                4,
+                5,
+                6
+            ],
+            "heure_debut": 16.0,
+            "heure_fin": 24.0,
+            "actif": true,
+            "pause_debut": 12.0,
+            "pause_fin": 13.0,
+            "pool_garde": false
         }
     }
 }

@@ -4,7 +4,8 @@ Extraites de TabLive pour permettre les tests unitaires.
 """
 
 
-def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=None):
+def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=None,
+                              paillasse_occupee=None, reserved_slots=None):
     """Retourne (machine_dict, nom_machine, etape) pour la prochaine étape du workflow.
 
     Règle fondamentale : le workflow du tube N'EST JAMAIS modifié sauf si aucune
@@ -23,9 +24,25 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
     virtual_queues : dict, optional
         {nom_machine: nb_tubes_déjà_attribués_dans_ce_batch}
         Permet au caller de tenir compte des tubes déjà assignés avant déplacement.
+    paillasse_occupee : set, optional
+        Noms des paillasses (tech_requis_poste=True) ayant déjà un analyste.
+        Ces machines reçoivent un malus de scoring pour favoriser les paillasses libres,
+        évitant qu'un seul analyste soit bloqué pendant que l'autre paillasse reste vide.
+    reserved_slots : dict, optional
+        {nom_machine: nb_slots_réservés_par_des_techs_en_transit}
+        CRITIQUE : sans ce paramètre, la fonction peut continuer à recommander une
+        machine déjà saturée de réservations non encore déposées, provoquant une
+        accumulation infinie de réservations fantômes et un blocage permanent des
+        techniciens (voir bug reservations ct1/centri3 — les tubes n'étaient jamais
+        livrés après quelques jours de simulation).
     """
     if virtual_queues is None:
         virtual_queues = {}
+    if paillasse_occupee is None:
+        paillasse_occupee = set()
+    if reserved_slots is None:
+        reserved_slots = {}
+
     while tube["workflow"]:
         etape = tube["workflow"][0]  # peek uniquement — PAS de pop ici
         candidats = [(nom, m) for nom, m in machines.items()
@@ -35,17 +52,48 @@ def trouver_prochaine_machine(tube, machines, machine_queues, virtual_queues=Non
             print(f"[ERREUR] Pas de machine pour l'étape '{etape}', étape ignorée")
             continue
 
-        def _score(p, _mq=machine_queues, _vq=virtual_queues):
+        def _score(p, _mq=machine_queues, _vq=virtual_queues, _po=paillasse_occupee, _rs=reserved_slots):
             nom, m = p
             cap = m.get("capacite", 4)
             fm  = m.get("file_max", cap)
-            current = len(_mq.get(nom, [])) + _vq.get(nom, 0)
+            # Réservations d'AUTRES tubes en transit vers cette machine (exclut la
+            # réservation propre de CE tube s'il en avait déjà une sur cette machine)
+            reserves_autres = _rs.get(nom, 0) - (1 if tube.get("_reserved_machine") == nom else 0)
+            reserves_autres = max(0, reserves_autres)
+            current = len(_mq.get(nom, [])) + _vq.get(nom, 0) + reserves_autres
             if current >= fm:
-                return float("inf")   # machine pleine
-            return cap - current      # fill-first : on remplit la machine la plus proche du seuil
+                return (2, 9999, 0)   # machine pleine → toujours écartée (sentinel > tout score valide)
+            # Stratégie batch-first : slots restants avant déclenchement du cycle
+            #   remaining = cap - current  →  0 quand le seuil est atteint, cap quand vide
+            #   On trie par (remaining ascendant, cap ascendant) via min() :
+            #     - Préfère la machine la plus proche de déclencher son cycle
+            #     - À égalité, préfère la machine de plus petite capacité (déclenche avec
+            #       moins de tubes → cycle rapide plutôt que grosse centri à moitié vide)
+            #   Exemple : ct1 vide cap=4, ct2 vide cap=10, 4 tubes disponibles
+            #     tube 1 : ct1 (0, 4, 4)  ct2 (0, 10, 10)  → ct1 gagne (4 < 10)  ✓
+            #     tube 2 : ct1 (0, 3, 4)  ct2 (0, 10, 10)  → ct1 gagne             ✓
+            #     tube 3 : ct1 (0, 2, 4)  → ct1 gagne                               ✓
+            #     tube 4 : ct1 (0, 1, 4)  → ct1 gagne → cycle déclenché !           ✓
+            #   Exemple : ct1 à 3/4 (remaining=1), ct2 vide (remaining=10)
+            #     → ct1 gagne → on complète d'abord le cycle en cours               ✓
+            remaining = max(0, cap - current)
+            # Malus si la machine est déjà au seuil de déclenchement (current >= cap) :
+            # un tube supplémentaire n'apporterait rien (le cycle est déjà déclenché ou
+            # le batch est complet) → reléguer après les machines encore «ouvertes».
+            at_cap_malus = 1 if current >= cap else 0
+            # Malus Paillasse :
+            #   1 = occupée mais encore de la place (on peut déposer, tech déjà là)
+            #   2 = occupée ET queue >= seuil (prochain batch déjà alimenté → inutile d'y envoyer
+            #       davantage, les autres machines passent avant)
+            _seuil_m = m.get("seuil", 1)
+            if m.get("tech_requis_poste", False) and nom in _po:
+                paillasse_malus = 2 if current >= _seuil_m else 1
+            else:
+                paillasse_malus = 0
+            return (paillasse_malus, at_cap_malus, remaining, cap)
 
         scores = [((nom, m), _score((nom, m))) for nom, m in candidats]
-        scores_valides = [item for item in scores if item[1] != float("inf")]
+        scores_valides = [item for item in scores if item[1][0] < 2]   # exclut les machines pleines
         if not scores_valides:
             return None, None, None   # toutes pleines → reporter le tube
 

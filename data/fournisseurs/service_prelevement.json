@@ -1,0 +1,110 @@
+{
+    "id": "service_prelevement",
+    "nom": "Service Prélèvement",
+    "couleur": "#27ae60",
+    "icone": "🩸",
+    "position_canvas": {
+        "x": 220,
+        "y": 1040
+    },
+    "duree_trajet_min": 1.9,
+    "actif": true,
+    "frequence_base": 5.0,
+    "gamma_k": 2.0,
+    "heure_debut": 7.0,
+    "pct_urgent": 0.05,
+    "_commentaire_flux": "Flux continu avec pics matinaux. Rush rares (afflux soudain de patients). Pauses courtes (changement d'équipe).",
+    "surge_proba": 0.003,
+    "surge_facteur": 3.5,
+    "surge_duree_min": 20,
+    "surge_duree_max": 50,
+    "pause_proba": 0.004,
+    "pause_duree_min": 5,
+    "pause_duree_max": 20,
+    "batch_proba": 0.0,
+    "batch_min": 1,
+    "batch_max": 1,
+    "profil_horaire": [
+        [
+            0.0,
+            0.05
+        ],
+        [
+            6.0,
+            0.3
+        ],
+        [
+            7.0,
+            1.5
+        ],
+        [
+            8.0,
+            2.0
+        ],
+        [
+            9.0,
+            1.8
+        ],
+        [
+            10.0,
+            1.4
+        ],
+        [
+            11.0,
+            1.2
+        ],
+        [
+            12.0,
+            0.8
+        ],
+        [
+            13.0,
+            1.0
+        ],
+        [
+            14.0,
+            1.1
+        ],
+        [
+            15.0,
+            0.9
+        ],
+        [
+            16.0,
+            0.6
+        ],
+        [
+            17.0,
+            0.3
+        ],
+        [
+            18.0,
+            0.1
+        ],
+        [
+            24.0,
+            0.05
+        ]
+    ],
+    "types_tubes_emis": [
+        "tube1"
+    ],
+    "chemin_waypoints": [
+        [
+            420,
+            1082
+        ],
+        [
+            440,
+            580
+        ],
+        [
+            440,
+            320
+        ],
+        [
+            600,
+            320
+        ]
+    ]
+}

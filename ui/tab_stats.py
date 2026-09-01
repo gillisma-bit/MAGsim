@@ -1,5 +1,7 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox
+import threading
+import ui.theme as theme
 
 try:
     import matplotlib
@@ -17,7 +19,16 @@ class TabStats:
         self.parent = parent
         self.config_manager = config_manager
         self.tab_live = tab_live_ref
+        self._assistant_window = None   # fenêtre flottante Assistant IA
+        # ── Assistant IA intégré ──
+        self._ia_conversation  = None
+        self._ia_en_cours      = False
+        self._ia_model         = "llama3"
+        self._ia_backend       = "ollama"   # "ollama" | "github"
+        self._ia_token_start   = None
+        self._ia_stop_event    = None
         self._build_ui()
+        threading.Thread(target=self._ia_charger_modeles, daemon=True).start()
 
     def set_tab_live(self, tab_live):
         self.tab_live = tab_live
@@ -27,7 +38,7 @@ class TabStats:
             ttk.Label(
                 self.parent,
                 text="⚠️  matplotlib requis pour cet onglet.\n\nInstallez-le avec : pip install matplotlib",
-                font=("Segoe UI", 13), foreground="#c0392b", justify="center"
+                font=theme.FONT_TITLE, foreground="#c0392b", justify="center"
             ).pack(expand=True)
             return
 
@@ -38,15 +49,20 @@ class TabStats:
         ttk.Button(ctrl, text="🔄  Actualiser les graphiques",
                    command=self.refresh).pack(side=tk.LEFT, padx=5)
 
-        ttk.Button(ctrl, text="🗑  Effacer l'historique",
+        ttk.Button(ctrl, text="�  Effacer l'historique",
                    command=self.clear_history).pack(side=tk.LEFT, padx=5)
+
+        ttk.Separator(ctrl, orient="vertical").pack(side=tk.LEFT, fill="y", padx=8, pady=2)
+
+        ttk.Button(ctrl, text="🤖  Assistant IA",
+                   command=self._ouvrir_assistant).pack(side=tk.LEFT, padx=5)
 
         # ── Cases à cocher par graphique ──────────────────────────────────
         checks = ttk.Frame(self.parent)
         checks.pack(fill="x", padx=12, pady=(0, 2))
 
         ttk.Label(checks, text="Graphiques affichés :",
-                  font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(4, 8))
+                  font=theme.FONT_LABEL).pack(side=tk.LEFT, padx=(4, 8))
 
         self.show_queues = tk.BooleanVar(value=True)
         ttk.Checkbutton(checks, text="Files d'attente",
@@ -68,72 +84,266 @@ class TabStats:
                         variable=self.show_transit,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
+        self.show_tat_urgents = tk.BooleanVar(value=True)
+        ttk.Checkbutton(checks, text="TAT normal vs urgent",
+                        variable=self.show_tat_urgents,
+                        command=self.refresh).pack(side=tk.LEFT, padx=6)
+
         self.show_errors = tk.BooleanVar(value=True)
         ttk.Checkbutton(checks, text="Erreurs cumulées",
                         variable=self.show_errors,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
-        self.show_distances = tk.BooleanVar(value=True)
-        ttk.Checkbutton(checks, text="Distances techniciens",
-                        variable=self.show_distances,
+        self.show_bienetre = tk.BooleanVar(value=True)
+        ttk.Checkbutton(checks, text="Bien-être techniciens",
+                        variable=self.show_bienetre,
                         command=self.refresh).pack(side=tk.LEFT, padx=6)
 
-        self.lbl_info = ttk.Label(
-            ctrl,
-            text="Lancez une simulation dans l'onglet LIVE puis cliquez sur Actualiser.",
-            font=("Segoe UI", 10), foreground="#555"
-        )
-        self.lbl_info.pack(side=tk.LEFT, padx=18)
+        self.show_arrivees = tk.BooleanVar(value=True)
+        ttk.Checkbutton(checks, text="Arrivées / heure",
+                        variable=self.show_arrivees,
+                        command=self.refresh).pack(side=tk.LEFT, padx=6)
 
         # --- Barre de simulation accélérée ---
         fast = ttk.LabelFrame(self.parent, text=" ⚡ Simulation accélérée (sans animation) ")
         fast.pack(fill="x", padx=12, pady=(2, 4))
 
-        ttk.Label(fast, text="Durée (unités de simulation) :").pack(side=tk.LEFT, padx=(8, 2), pady=4)
-        self.ent_duree = ttk.Entry(fast, width=8)
-        self.ent_duree.insert(0, "2880")
+        ttk.Label(fast, text="Durée (jours) :").pack(side=tk.LEFT, padx=(8, 2), pady=4)
+        self.ent_duree = ttk.Entry(fast, width=6)
+        self.ent_duree.insert(0, "2")
         self.ent_duree.pack(side=tk.LEFT, padx=2)
 
-        ttk.Label(fast, text="  ← ex : 480 = 8h de labo  |  2880 = 2 journées  |  1 unité = 1 min",
-                  font=("Segoe UI", 9), foreground="#777").pack(side=tk.LEFT, padx=4)
+        ttk.Label(fast, text="  ← ex : 0.5 = demi-journée  |  1 = 1 jour (1440 min)  |  7 = semaine",
+                  font=theme.FONT_NOTE, foreground="#777").pack(side=tk.LEFT, padx=4)
 
         self.btn_fast = ttk.Button(fast, text="▶ Lancer",
                                    command=self.lancer_simulation_rapide)
-        self.btn_fast.pack(side=tk.LEFT, padx=10, pady=4)
+        self.btn_fast.pack(side=tk.LEFT, padx=4, pady=4)
+
+        self.btn_debug = ttk.Button(fast, text="🐛 DEBUG",
+                                    command=self.lancer_debug_rapide, width=10)
+        self.btn_debug.pack(side=tk.LEFT, padx=4, pady=4)
+
+        self.btn_stop = ttk.Button(fast, text="⏹ FORCER ARRÊT",
+                                   command=self.forcer_arret_sim, width=16)
+        self.btn_stop.pack(side=tk.LEFT, padx=4, pady=4)
+        self.btn_stop.config(state="disabled")
 
         self.progress = ttk.Progressbar(fast, mode="determinate", length=200)
         self.progress.pack(side=tk.LEFT, padx=8, pady=4)
 
-        self.lbl_fast_status = ttk.Label(fast, text="", font=("Segoe UI", 9), foreground="#2c3e50")
+        self.lbl_fast_status = ttk.Label(fast, text="", font=theme.FONT_NOTE, foreground="#2c3e50")
         self.lbl_fast_status.pack(side=tk.LEFT, padx=4)
 
-        # --- Zone matplotlib ---
-        container = ttk.Frame(self.parent)
-        container.pack(expand=True, fill="both", padx=4, pady=4)
+        # --- Zone principale : graphiques (gauche) + panel IA (milieu) + résumé (droite) ---
+        main_area = tk.Frame(self.parent)
+        main_area.pack(expand=True, fill="both", padx=4, pady=4)
+        main_area.columnconfigure(0, weight=1)   # graphes — extensible
+        main_area.columnconfigure(1, weight=0)   # séparateur
+        main_area.columnconfigure(2, weight=0)   # assistant IA
+        main_area.columnconfigure(3, weight=0)   # séparateur
+        main_area.columnconfigure(4, weight=0)   # indicateurs
+        main_area.rowconfigure(0, weight=1)
 
-        self.fig = Figure(figsize=(15, 11), dpi=96, facecolor="#f4f6f9")
+        # ── Colonne gauche : matplotlib ───────────────────────────────────────
+        container = tk.Frame(main_area)
+        container.grid(row=0, column=0, sticky="nsew")
+
+        # La taille sera recalculée à chaque refresh() selon le nombre de graphiques actifs
+        self.fig = Figure(figsize=(12, 7), dpi=96, facecolor="#f4f6f9")
         self.canvas_mpl = FigureCanvasTkAgg(self.fig, master=container)
 
         toolbar = NavigationToolbar2Tk(self.canvas_mpl, container)
         toolbar.update()
-
         self.canvas_mpl.get_tk_widget().pack(expand=True, fill="both")
+
+        # ── Séparateur ────────────────────────────────────────────────────────
+        tk.Frame(main_area, bg="#cccccc", width=1).grid(row=0, column=1, sticky="ns")
+
+        # ── Colonne centrale : assistant IA intégré ───────────────────────────
+        self._ia_frame = tk.Frame(main_area, bg="#13131f", width=320)
+        self._ia_frame.grid(row=0, column=2, sticky="nsew")
+        self._ia_frame.grid_propagate(False)
+
+        # En-tête avec sélecteur de modèle
+        ia_header = tk.Frame(self._ia_frame, bg="#13131f")
+        ia_header.pack(fill="x")
+        tk.Label(ia_header,
+                 text="🤖  Assistant IA",
+                 font=theme.FONT_SECTION,
+                 bg="#13131f", fg="#cba6f7",
+                 anchor="w", padx=10, pady=6).pack(side=tk.LEFT)
+
+        self._ia_model_var = tk.StringVar(value="…")
+        self._ia_combo = ttk.Combobox(ia_header, textvariable=self._ia_model_var,
+                                      width=18, state="readonly",
+                                      font=theme.FONT_NOTE)
+        self._ia_combo.pack(side=tk.RIGHT, padx=(0, 8), pady=4)
+        self._ia_combo.bind("<<ComboboxSelected>>", self._ia_on_model_change)
+        tk.Frame(self._ia_frame, bg="#313145", height=1).pack(fill="x")
+
+        # Historique du chat
+        chat_area = tk.Frame(self._ia_frame, bg="#1e1e2e")
+        chat_area.pack(fill="both", expand=True, padx=0, pady=0)
+        chat_area.rowconfigure(0, weight=1)
+        chat_area.columnconfigure(0, weight=1)
+
+        self._ia_chat = tk.Text(
+            chat_area,
+            font=theme.FONT_BODY,
+            bg="#1e1e2e", fg="#cdd6f4",
+            relief="flat", bd=0,
+            wrap="word",
+            state="disabled",
+            padx=8, pady=6,
+            cursor="arrow",
+        )
+        sb_ia = ttk.Scrollbar(chat_area, orient="vertical", command=self._ia_chat.yview)
+        self._ia_chat.configure(yscrollcommand=sb_ia.set)
+        sb_ia.grid(row=0, column=1, sticky="ns")
+        self._ia_chat.grid(row=0, column=0, sticky="nsew")
+
+        self._ia_chat.tag_config("user",      foreground="#89dceb", font=theme.FONT_LABEL)
+        self._ia_chat.tag_config("assistant", foreground="#cdd6f4")
+        self._ia_chat.tag_config("system",    foreground="#585b70", font=theme.FONT_NOTE + ("italic",))
+        self._ia_chat.tag_config("error",     foreground="#f38ba8")
+
+        # Zone de saisie
+        saisie_ia = tk.Frame(self._ia_frame, bg="#181825")
+        saisie_ia.pack(fill="x", padx=0, pady=0)
+        saisie_ia.columnconfigure(0, weight=1)
+
+        self._ia_saisie = tk.Text(
+            saisie_ia,
+            font=theme.FONT_BODY,
+            bg="#181825", fg="#cdd6f4",
+            relief="flat", bd=0,
+            height=3,
+            padx=8, pady=6,
+            wrap="word",
+            insertbackground="#cdd6f4",
+        )
+        self._ia_saisie.grid(row=0, column=0, sticky="ew")
+        self._ia_saisie.bind("<Return>", self._ia_on_entree_rapide)
+        self._ia_saisie.bind("<Shift-Return>", lambda e: None)
+
+        self._ia_btn_envoyer = tk.Button(
+            saisie_ia,
+            text="↵",
+            font=theme.FONT_LABEL,
+            bg="#7c3aed", fg="white",
+            relief="flat", bd=0,
+            padx=10, pady=4,
+            activebackground="#6d28d9",
+            cursor="hand2",
+            command=self._ia_envoyer,
+        )
+        self._ia_btn_envoyer.grid(row=0, column=1, sticky="nsew", padx=2, pady=4)
+
+        self._ia_btn_stop = tk.Button(
+            saisie_ia,
+            text="◼",
+            font=theme.FONT_LABEL,
+            bg="#e64553", fg="white",
+            relief="flat", bd=0,
+            padx=8, pady=4,
+            activebackground="#c0392b",
+            cursor="hand2",
+            command=self._ia_stopper,
+            state="disabled",
+        )
+        self._ia_btn_stop.grid(row=0, column=2, sticky="nsew", padx=(0, 2), pady=4)
+
+        tk.Button(
+            saisie_ia,
+            text="📊",
+            font=theme.FONT_BODY,
+            bg="#313145", fg="white",
+            relief="flat", bd=0,
+            padx=6, pady=4,
+            activebackground="#45475a",
+            cursor="hand2",
+            command=self._ia_dialog_sources,
+        ).grid(row=0, column=3, sticky="nsew", padx=(0, 2), pady=4)
+
+        # Statut
+        self._ia_lbl_statut = tk.Label(
+            self._ia_frame,
+            text="⬤  Vérification…",
+            font=theme.FONT_NOTE,
+            bg="#13131f", fg="#585b70",
+            anchor="w", padx=8, pady=3,
+        )
+        self._ia_lbl_statut.pack(fill="x")
+
+        # ── Séparateur ────────────────────────────────────────────────────────
+        tk.Frame(main_area, bg="#cccccc", width=1).grid(row=0, column=3, sticky="ns")
+
+        # ── Colonne droite : panneau résumé ───────────────────────────────────
+        self._resume_frame = tk.Frame(main_area, bg="#f8f9fa", width=260)
+        self._resume_frame.grid(row=0, column=4, sticky="nsew")
+        self._resume_frame.grid_propagate(False)   # largeur fixe
+
+        tk.Label(self._resume_frame,
+                 text="📊  Indicateurs clés",
+                 font=theme.FONT_SECTION,
+                 bg="#f8f9fa", fg="#2c3e50",
+                 anchor="w", padx=12, pady=8).pack(fill="x")
+        tk.Frame(self._resume_frame, bg="#dde1e7", height=1).pack(fill="x")
+
+        # Canvas scrollable pour les cartes
+        self._resume_canvas = tk.Canvas(self._resume_frame, bg="#f8f9fa",
+                                        highlightthickness=0, width=258)
+        sb_res = ttk.Scrollbar(self._resume_frame, orient="vertical",
+                               command=self._resume_canvas.yview)
+        self._resume_canvas.configure(yscrollcommand=sb_res.set)
+        sb_res.pack(side=tk.RIGHT, fill="y")
+        self._resume_canvas.pack(side=tk.LEFT, fill="both", expand=True)
+
+        self._resume_inner = tk.Frame(self._resume_canvas, bg="#f8f9fa")
+        self._resume_win = self._resume_canvas.create_window(
+            (0, 0), window=self._resume_inner, anchor="nw")
+
+        self._resume_inner.bind("<Configure>",
+            lambda _: self._resume_canvas.configure(
+                scrollregion=self._resume_canvas.bbox("all")))
+        self._resume_canvas.bind("<Configure>",
+            lambda e: self._resume_canvas.itemconfig(self._resume_win, width=e.width))
+        self._resume_canvas.bind("<MouseWheel>",
+            lambda e: self._resume_canvas.yview_scroll(-1*(e.delta//120), "units"))
+
+        # Message initial
+        self._resume_placeholder = tk.Label(
+            self._resume_inner,
+            text="Lancez une simulation\npuis cliquez sur\nActualiser.",
+            font=theme.FONT_NOTE + ("italic",), bg="#f8f9fa", fg="#999",
+            justify="center", pady=20)
+        self._resume_placeholder.pack()
 
     # ------------------------------------------------------------------
     def refresh(self):
         if not HAS_MATPLOTLIB:
             return
         if not self.tab_live:
-            self.lbl_info.config(text="Référence à la simulation manquante.")
+            for w in self._resume_inner.winfo_children():
+                w.destroy()
+            tk.Label(self._resume_inner,
+                     text="Référence à la simulation\nmanquante.",
+                     font=theme.FONT_NOTE + ("italic",), bg="#f8f9fa", fg="#c0392b",
+                     justify="center", pady=20).pack()
             return
 
         hist = getattr(self.tab_live, "stats_history", None)
         if not hist or not hist.get("time"):
-            self.lbl_info.config(
-                text="Aucune donnée — démarrez une simulation et attendez quelques secondes.")
+            for w in self._resume_inner.winfo_children():
+                w.destroy()
+            tk.Label(self._resume_inner,
+                     text="Aucune donnée —\ndémarrez une simulation\net attendez quelques secondes.",
+                     font=theme.FONT_NOTE + ("italic",), bg="#f8f9fa", fg="#999",
+                     justify="center", pady=20).pack()
             return
 
-        times = hist["time"]
+        times = list(hist["time"])
         machines = self.config_manager.get_machines()
         noms = [n for n, m in machines.items()
                 if m["type"] not in ("ENTREE", "SORTIE", "TECH_OFFICE")]
@@ -164,24 +374,42 @@ class TabStats:
         show_output    = self.show_output_queues.get()
         show_occup     = self.show_occupation.get()
         show_transit   = self.show_transit.get()
+        show_tat_urgents = self.show_tat_urgents.get()
         show_errors    = self.show_errors.get()
         distances      = hist.get("distances_tech", {})
-        has_distances  = bool(distances and any(bool(v) for v in distances.values()))
-        show_dist      = self.show_distances.get() and has_distances
+        bienetre_data  = hist.get("bienetre", {})
+        has_bienetre   = bool(bienetre_data and any(bool(v) for v in bienetre_data.values()))
+        show_bienetre  = self.show_bienetre.get() and has_bienetre
+        arrivees_data          = hist.get("arrivees_par_heure", {})
+        arrivees_par_service   = hist.get("arrivees_par_heure_par_service", {})
+        show_arrivees          = self.show_arrivees.get() and bool(arrivees_data)
 
         # Liste ordonnée des graphiques actifs → index subplot dynamique
-        active = [show_queues, show_output, show_occup, show_transit, show_errors, show_dist]
+        active = [show_queues, show_output, show_occup, show_transit, show_tat_urgents, show_errors, show_bienetre, show_arrivees]
         n_plots = sum(active)
         if n_plots == 0:
             self.fig.clear()
             self.canvas_mpl.draw()
             return
 
-        # Compteur d'index courant (subplot 1-based)
+        # Grille 2 colonnes — chaque rangée a ~3.8 pouces de haut minimum
+        ncols = 2 if n_plots > 1 else 1
+        nrows = (n_plots + ncols - 1) // ncols   # division plafond
+        fig_h = max(7, nrows * 3.8)
+        self.fig.set_size_inches(15, fig_h)
+
+        # Compteur d'index courant (subplot 1-based, remplit gauche→droite, haut→bas)
         _plot_counter = [0]
         def _next_ax():
             _plot_counter[0] += 1
-            return self.fig.add_subplot(n_plots, 1, _plot_counter[0])
+            idx = _plot_counter[0]
+            # Si c'est le dernier graphique ET qu'il tombe seul sur une rangée impaire
+            # → le faire occuper toute la largeur (colspan=2)
+            if ncols == 2 and n_plots % 2 == 1 and idx == n_plots:
+                ax = self.fig.add_subplot(nrows, 1, nrows)
+            else:
+                ax = self.fig.add_subplot(nrows, ncols, idx)
+            return ax
 
         self.fig.clear()
 
@@ -199,13 +427,13 @@ class TabStats:
             ax1.xaxis.set_major_formatter(x_fmt)
             ax1.grid(True, alpha=0.3, linestyle="--")
 
-            entry_data = hist.get("entry", [])
+            entry_data = list(hist.get("entry", []))
             if entry_data:
                 ax1.plot(times[:len(entry_data)], entry_data,
                          label="ENTRÉE (non pris)", color="#2c3e50",
                          linewidth=2, linestyle="--", alpha=0.85)
             for i, nom in enumerate(noms):
-                data = hist["queues"].get(nom, [])
+                data = list(hist["queues"].get(nom, []))
                 color = COLORS[i % len(COLORS)]
                 if data:
                     ax1.plot(times[:len(data)], data,
@@ -224,7 +452,7 @@ class TabStats:
             ax2.xaxis.set_major_formatter(x_fmt)
             ax2.grid(True, alpha=0.3, linestyle="--")
             for i, nom in enumerate(noms):
-                data = hist["output"].get(nom, [])
+                data = list(hist["output"].get(nom, []))
                 if data:
                     ax2.plot(times[:len(data)], data,
                              label=nom, color=COLORS[i % len(COLORS)],
@@ -244,7 +472,7 @@ class TabStats:
 
             window = max(1, len(times) // 10)
             for i, nom in enumerate(noms):
-                raw = hist["busy"].get(nom, [])
+                raw = list(hist["busy"].get(nom, []))
                 if not raw:
                     continue
                 smoothed = []
@@ -258,8 +486,9 @@ class TabStats:
             ax3.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
         # ── Graphique temps moyen de transit ───────────────────────────
-        transit_avg  = hist.get("transit_time_avg", [])
-        transit_roll = hist.get("transit_time_rolling", [])
+        transit_avg     = list(hist.get("transit_time_avg", []))
+        transit_roll    = list(hist.get("transit_time_rolling", []))
+        transit_pending = list(hist.get("transit_time_pending_max", []))
 
         def _filter_none(t_list, v_list):
             pairs = [(t, v) for t, v in zip(t_list, v_list) if v is not None]
@@ -270,38 +499,149 @@ class TabStats:
         if show_transit:
             ax4 = _next_ax()
             ax4.set_facecolor("#ffffff")
-            ax4.set_title("Temps de transit — de l'arrivée à la sortie",
+            ax4.set_title("Temps de transit — tubes sortis + tubes en attente + congés maladie",
                           fontsize=11, fontweight="bold", pad=8)
-            ax4.set_ylabel("Durée (min)")
+            ax4.set_ylabel("Durée réelle (min)")
             ax4.set_xlabel("Temps écoulé")
             ax4.xaxis.set_major_formatter(x_fmt)
             ax4.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _fmt_duree(v)))
             ax4.grid(True, alpha=0.3, linestyle="--")
 
             has_data = any(v is not None for v in transit_avg)
-            if has_data:
-                t_avg, v_avg = _filter_none(times[:len(transit_avg)], transit_avg)
-                t_roll, v_roll = _filter_none(times[:len(transit_roll)], transit_roll)
-                ax4.plot(list(t_avg), list(v_avg),
-                         color="#8e44ad", linewidth=1.5, alpha=0.5,
-                         linestyle="--", label="Moyenne cumulative")
-                ax4.plot(list(t_roll), list(v_roll),
-                         color="#8e44ad", linewidth=2.5, alpha=0.95,
-                         label="Glissante (20 derniers)")
-                last_roll = next((v for v in reversed(transit_roll) if v is not None), None)
-                if last_roll is not None:
-                    ax4.axhline(y=last_roll, color="#8e44ad", linestyle=":",
-                                alpha=0.45, linewidth=1.2)
-                    ax4.text(times[-1] if times else 0, last_roll,
-                             f"  {_fmt_duree(last_roll)}",
-                             va="center", fontsize=9, color="#8e44ad")
-            else:
+            has_pending = any(v is not None for v in transit_pending)
+            if has_data or has_pending:
+                if has_data:
+                    t_avg, v_avg = _filter_none(times[:len(transit_avg)], transit_avg)
+                    t_roll, v_roll = _filter_none(times[:len(transit_roll)], transit_roll)
+                    ax4.plot(list(t_avg), list(v_avg),
+                             color="#8e44ad", linewidth=1.5, alpha=0.5,
+                             linestyle="--", label="Moyenne cumulative (sortis)")
+                    ax4.plot(list(t_roll), list(v_roll),
+                             color="#8e44ad", linewidth=2.5, alpha=0.95,
+                             label="Glissante 20 derniers (sortis)")
+                    last_roll = next((v for v in reversed(transit_roll) if v is not None), None)
+                    if last_roll is not None:
+                        ax4.axhline(y=last_roll, color="#8e44ad", linestyle=":",
+                                    alpha=0.45, linewidth=1.2)
+                        ax4.text(times[-1] if times else 0, last_roll,
+                                 f"  {_fmt_duree(last_roll)}",
+                                 va="center", fontsize=9, color="#8e44ad")
+                if has_pending:
+                    t_pend, v_pend = _filter_none(times[:len(transit_pending)], transit_pending)
+                    ax4.plot(list(t_pend), list(v_pend),
+                             color="#e74c3c", linewidth=2.0, alpha=0.85,
+                             linestyle="-", label="Âge max tube en attente ⚠")
+                    last_pend = next((v for v in reversed(transit_pending) if v is not None), None)
+                    if last_pend is not None:
+                        ax4.text(times[-1] if times else 0, last_pend,
+                                 f"  {_fmt_duree(last_pend)}",
+                                 va="center", fontsize=9, color="#e74c3c")
+
+            # ── Marqueurs congés maladie ──────────────────────────────────────
+            _PALETTE_SICK = [
+                "#e67e22", "#27ae60", "#2980b9", "#8e44ad",
+                "#16a085", "#d35400", "#c0392b", "#7f8c8d",
+            ]
+            events_maladie = hist.get("events_arret_maladie", [])
+            if events_maladie:
+                # Associer une couleur stable par technicien
+                techs_maladie = list(dict.fromkeys(e["nom"] for e in events_maladie))
+                couleur_par_tech = {
+                    nom: _PALETTE_SICK[i % len(_PALETTE_SICK)]
+                    for i, nom in enumerate(techs_maladie)
+                }
+                # Tracer une ligne verticale par événement + annotation minimale
+                techs_deja_legendes_debut  = set()
+                techs_deja_legendes_retour = set()
+                y_top = ax4.get_ylim()[1] if ax4.get_ylim()[1] > 0 else 1
+                for ev in events_maladie:
+                    clr  = couleur_par_tech[ev["nom"]]
+                    ev_t = ev["t"]
+                    if ev["type"] == "debut":
+                        label = (f"[arret] {ev['nom']}"
+                                 if ev["nom"] not in techs_deja_legendes_debut else "")
+                        ax4.axvline(x=ev_t, color=clr, linewidth=1.8,
+                                    linestyle="--", alpha=0.80, label=label or "_nolegend_")
+                        ax4.annotate(
+                            f"arret:{ev['nom']}",
+                            xy=(ev_t, 0), xycoords=("data", "axes fraction"),
+                            xytext=(2, 4), textcoords="offset points",
+                            fontsize=7.5, color=clr, rotation=90,
+                            va="bottom", ha="left",
+                        )
+                        techs_deja_legendes_debut.add(ev["nom"])
+                    else:  # retour
+                        label = (f"[retour] {ev['nom']}"
+                                 if ev["nom"] not in techs_deja_legendes_retour else "")
+                        ax4.axvline(x=ev_t, color=clr, linewidth=1.4,
+                                    linestyle=":", alpha=0.65, label=label or "_nolegend_")
+                        ax4.annotate(
+                            f"↩{ev['nom']}",
+                            xy=(ev_t, 0.5), xycoords=("data", "axes fraction"),
+                            xytext=(2, 4), textcoords="offset points",
+                            fontsize=7.5, color=clr, rotation=90,
+                            va="bottom", ha="left",
+                        )
+                        techs_deja_legendes_retour.add(ev["nom"])
+
+            if not has_data and not has_pending and not events_maladie:
                 ax4.text(0.5, 0.5,
                          "En attente — aucun tube n'a encore atteint la SORTIE.\n"
                          "La courbe apparaîtra dès que les premiers tubes completent leur parcours.",
                          ha="center", va="center", transform=ax4.transAxes,
                          fontsize=10, color="#888", style="italic")
-            ax4.legend(loc="upper left", fontsize=9, framealpha=0.75)
+            ax4.legend(loc="upper left", fontsize=8, framealpha=0.75)
+
+        # ── Graphique TAT moyen normal vs urgent ───────────────────────
+        tat_normal_roll = list(hist.get("tat_normal_rolling", []))
+        tat_urgent_roll = list(hist.get("tat_urgent_rolling", []))
+
+        if show_tat_urgents:
+            ax_tat = _next_ax()
+            ax_tat.set_facecolor("#ffffff")
+            ax_tat.set_title("TAT moyen — tubes normaux vs tubes urgents (glissante 20 derniers)",
+                             fontsize=11, fontweight="bold", pad=8)
+            ax_tat.set_ylabel("Durée réelle (min)")
+            ax_tat.set_xlabel("Temps écoulé")
+            ax_tat.xaxis.set_major_formatter(x_fmt)
+            ax_tat.yaxis.set_major_formatter(FuncFormatter(lambda v, _: _fmt_duree(v)))
+            ax_tat.grid(True, alpha=0.3, linestyle="--")
+
+            has_normal = any(v is not None for v in tat_normal_roll)
+            has_urgent = any(v is not None for v in tat_urgent_roll)
+
+            if has_normal:
+                t_n, v_n = _filter_none(times[:len(tat_normal_roll)], tat_normal_roll)
+                ax_tat.plot(list(t_n), list(v_n),
+                            color="#3498db", linewidth=2.5, alpha=0.9,
+                            label="Tubes normaux")
+                last_n = next((v for v in reversed(tat_normal_roll) if v is not None), None)
+                if last_n is not None:
+                    ax_tat.axhline(y=last_n, color="#3498db", linestyle=":",
+                                   alpha=0.4, linewidth=1.2)
+                    ax_tat.text(times[-1] if times else 0, last_n,
+                                f"  {_fmt_duree(last_n)}",
+                                va="center", fontsize=9, color="#3498db")
+
+            if has_urgent:
+                t_u, v_u = _filter_none(times[:len(tat_urgent_roll)], tat_urgent_roll)
+                ax_tat.plot(list(t_u), list(v_u),
+                            color="#e74c3c", linewidth=2.5, alpha=0.9,
+                            linestyle="-", label="Tubes urgents")
+                last_u = next((v for v in reversed(tat_urgent_roll) if v is not None), None)
+                if last_u is not None:
+                    ax_tat.axhline(y=last_u, color="#e74c3c", linestyle=":",
+                                   alpha=0.4, linewidth=1.2)
+                    ax_tat.text(times[-1] if times else 0, last_u,
+                                f"  {_fmt_duree(last_u)}",
+                                va="center", fontsize=9, color="#e74c3c")
+
+            if not has_normal and not has_urgent:
+                ax_tat.text(0.5, 0.5,
+                            "En attente — aucun tube n'a encore atteint la SORTIE.",
+                            ha="center", va="center", transform=ax_tat.transAxes,
+                            fontsize=10, color="#888", style="italic")
+            ax_tat.legend(loc="upper right", fontsize=9, framealpha=0.75)
 
         # ── Graphique erreurs cumulées ─────────────────────────────────
         if show_errors:
@@ -314,8 +654,8 @@ class TabStats:
             ax5.xaxis.set_major_formatter(x_fmt)
             ax5.grid(True, alpha=0.3, linestyle="--")
 
-            rejetes_data  = hist.get("rejetes", [])
-            degrades_data = hist.get("degrades", [])
+            rejetes_data  = list(hist.get("rejetes", []))
+            degrades_data = list(hist.get("degrades", []))
             if rejetes_data:
                 ax5.plot(times[:len(rejetes_data)], rejetes_data,
                          color="#e74c3c", linewidth=2, label="Rejets (mauvais prélèv. + erreur tech)")
@@ -336,103 +676,292 @@ class TabStats:
                          fontsize=10, color="#888", style="italic")
             ax5.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
-        # ── Graphique distance marchée par technicien par jour simulé ──
-        if show_dist:
+        # ── Graphique bien-être des techniciens ────────────────────────
+        if show_bienetre:
             from core.technician import TechnicianState
-            ax6 = _next_ax()
-            ax6.set_facecolor("#ffffff")
-            ax6.set_title("Distance marchée par technicien par jour simulé  (1 case = 50 cm)",
+            ax7 = _next_ax()
+            ax7.set_facecolor("#ffffff")
+            ax7.set_title("Bien-être des techniciens — mécontentement cumulatif par jour simulé",
                           fontsize=11, fontweight="bold", pad=8)
-            ax6.set_ylabel("Distance (m)")
-            ax6.set_xlabel("Jour simulé")
-            ax6.grid(True, alpha=0.3, linestyle="--", axis="y")
+            ax7.set_ylabel("Mécontentement [0–1]")
+            ax7.set_xlabel("Jour simulé")
+            ax7.set_ylim(0, 1.05)
+            ax7.grid(True, alpha=0.3, linestyle="--", axis="y")
+
+            # Zones de couleur de fond selon les seuils
+            ax7.axhspan(0,    0.20, facecolor="#2ecc71", alpha=0.07)
+            ax7.axhspan(0.20, 0.40, facecolor="#f1c40f", alpha=0.07)
+            ax7.axhspan(0.40, 0.60, facecolor="#e67e22", alpha=0.07)
+            ax7.axhspan(0.60, 0.80, facecolor="#e74c3c", alpha=0.07)
+            ax7.axhspan(0.80, 1.05, facecolor="#8e44ad", alpha=0.07)
+
+            # Annotations des zones
+            for y_pos, label_be, color_be in [
+                (0.10, "Satisfait 😊", "#2ecc71"),
+                (0.30, "Neutre 😐", "#d4ac0d"),
+                (0.50, "Stressé 😟", "#e67e22"),
+                (0.70, "Épuisé 😠", "#e74c3c"),
+                (0.90, "Burn-out 🤢", "#8e44ad"),
+            ]:
+                ax7.axhline(y=y_pos, color=color_be, linestyle=":", alpha=0.30, linewidth=1)
 
             TECH_COLORS = TechnicianState.COLORS
-            all_jours = sorted({j for d in distances.values() for j in d.keys()})
-            n_techs = len(distances)
-            width = 0.8 / max(1, n_techs)
-            for i, (nom, jours_dist) in enumerate(distances.items()):
-                offsets = [j - 0.4 + i * width + width / 2
-                           for j in range(len(all_jours))]
-                vals = [jours_dist.get(j, 0.0) for j in all_jours]
+            all_jours_be = sorted({j for d in bienetre_data.values() for j in d.keys()})
+            for i, (nom, jours_be) in enumerate(bienetre_data.items()):
+                xs = all_jours_be
+                ys = [jours_be.get(j, 0.0) for j in xs]
                 color = TECH_COLORS[i % len(TECH_COLORS)]
-                bars = ax6.bar(offsets, vals, width=width * 0.9,
-                               color=color, alpha=0.85, label=nom, edgecolor="white")
-                for bar, v in zip(bars, vals):
-                    if v > 0:
-                        ax6.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.5,
-                                 f"{v:.1f} m", ha="center", va="bottom",
-                                 fontsize=8, color="#333333")
-            ax6.set_xticks(range(len(all_jours)))
-            ax6.set_xticklabels([f"Jour {j + 1}" for j in all_jours])
-            ax6.legend(loc="upper right", fontsize=9, framealpha=0.75)
+                ax7.plot(xs, ys, color=color, linewidth=2.5, marker="o",
+                         markersize=6, label=nom, alpha=0.9)
+                # Annoter la dernière valeur
+                if xs and ys:
+                    ax7.annotate(f"{ys[-1]:.2f}", xy=(xs[-1], ys[-1]),
+                                 xytext=(4, 4), textcoords="offset points",
+                                 fontsize=9, color=color)
+            ax7.set_xticks(all_jours_be)
+            ax7.set_xticklabels([f"Jour {j + 1}" for j in all_jours_be])
+            ax7.legend(loc="upper left", fontsize=9, framealpha=0.75)
 
-        self.fig.tight_layout(pad=2.8)
+        # ── Graphique arrivées par heure ───────────────────────────────
+        if show_arrivees:
+            ax8 = _next_ax()
+            ax8.set_facecolor("#ffffff")
+            ax8.set_title("Tubes reçus par créneau horaire",
+                          fontsize=11, fontweight="bold", pad=8)
+            ax8.set_ylabel("Nb tubes")
+            ax8.set_xlabel("Heure de la journée")
+            ax8.grid(True, alpha=0.3, linestyle="--", axis="y")
+
+            heures = sorted(arrivees_data.keys())
+
+            if arrivees_par_service:
+                # Barres empilées par service
+                services = sorted({svc
+                                   for hd in arrivees_par_service.values()
+                                   for svc in hd})
+                PALETTE = [
+                    "#3498db", "#e67e22", "#2ecc71", "#9b59b6",
+                    "#e74c3c", "#1abc9c", "#f39c12", "#34495e",
+                ]
+                cumul = [0] * len(heures)
+                for i, svc in enumerate(services):
+                    vals = [arrivees_par_service.get(h, {}).get(svc, 0) for h in heures]
+                    couleur = PALETTE[i % len(PALETTE)]
+                    label = svc.replace("_", " ")
+                    ax8.bar(heures, vals, bottom=cumul,
+                            color=couleur, alpha=0.88,
+                            edgecolor="white", width=0.7, label=label)
+                    cumul = [c + v for c, v in zip(cumul, vals)]
+                # Total au sommet de chaque barre
+                for h, tot in zip(heures, cumul):
+                    if tot > 0:
+                        ax8.text(h, tot + 0.3, str(tot),
+                                 ha="center", va="bottom",
+                                 fontsize=8, color="#333333")
+                ax8.legend(fontsize=8, loc="upper left",
+                           framealpha=0.85, ncol=2)
+            else:
+                # Fallback : barre unique (données sans décomposition par service)
+                valeurs = [arrivees_data[h] for h in heures]
+                bars = ax8.bar(heures, valeurs, color="#3498db", alpha=0.85,
+                               edgecolor="white", width=0.7)
+                for bar, v in zip(bars, valeurs):
+                    ax8.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 0.3,
+                             str(v), ha="center", va="bottom",
+                             fontsize=8, color="#333333")
+
+            ax8.set_xticks(heures)
+            ax8.set_xticklabels([f"{h:02d}h" for h in heures], rotation=45, ha="right")
+
+        self.fig.tight_layout(pad=1.8, h_pad=2.5, w_pad=2.0)
         self.canvas_mpl.draw()
 
-        # ── Résumé dans la barre ───────────────────────────────────────
+        # ── Panneau résumé (colonne droite) ────────────────────────────
+        self._update_panneau_resume(hist, times, noms, machines, distances, bienetre_data, _fmt_duree)
+
+        # ── Actualiser le contexte de l'assistant IA intégré ──────────
+        self._ia_actualiser_contexte(hist)
+
+    # ------------------------------------------------------------------
+    def _stats_card(self, parent, niveau, titre, corps_lignes):
+        """Carte visuellement stylisée dans le panneau résumé."""
+        COULEURS = {
+            "ok":      ("#27ae60", "#eafaf1"),
+            "info":    ("#2980b9", "#eaf3fb"),
+            "warning": ("#e67e22", "#fef9ec"),
+            "error":   ("#c0392b", "#fdf2f2"),
+            "neutre":  ("#7f8c8d", "#f5f5f5"),
+        }
+        accent, bg = COULEURS.get(niveau, COULEURS["neutre"])
+
+        outer = tk.Frame(parent, bg=accent, padx=1, pady=1)
+        outer.pack(fill="x", padx=8, pady=4)
+
+        inner = tk.Frame(outer, bg=bg, padx=8, pady=5)
+        inner.pack(fill="x")
+
+        tk.Label(inner, text=titre, font=theme.FONT_LABEL,
+                 bg=bg, fg=accent, anchor="w").pack(fill="x")
+
+        for ligne in corps_lignes:
+            tk.Label(inner, text=ligne, font=theme.FONT_BODY,
+                     bg=bg, fg="#2c3e50", anchor="w", wraplength=220,
+                     justify="left").pack(fill="x")
+
+    def _update_panneau_resume(self, hist, times, noms, machines,
+                               distances, bienetre_data, fmt_duree):
+        """Met à jour le panneau résumé à droite des graphiques."""
+        # Vider les cartes précédentes
+        for w in self._resume_inner.winfo_children():
+            w.destroy()
+
+        if hasattr(self, "_resume_placeholder"):
+            self._resume_placeholder = None
+
         t_total = times[-1] if times else 0
         total_tubes = getattr(self.tab_live, "stats_tubes_total", 0)
 
-        # Goulot : machine avec la plus grande longueur de file moyenne
-        goulot_nom = "—"
-        goulot_val = -1
+        # ─ Durée + volume ──────────────────────────────────────────
+        self._stats_card(self._resume_inner, "info",
+                         "🕐  Durée & volume",
+                         [f"Durée simulée : {fmt_duree(t_total)}",
+                          f"Tubes générés : {total_tubes}"])
+
+        # ─ Goulot + machine la plus occupée ────────────────────────
+        goulot_nom = "—"  ;  goulot_val = -1.0
+        busiest_nom = "—"  ;  busiest_val = -1.0
         for nom in noms:
-            data = hist["queues"].get(nom, [])
-            if data:
-                avg = sum(data) / len(data)
+            q = hist["queues"].get(nom, [])
+            if q:
+                avg = sum(q) / len(q)
                 if avg > goulot_val:
-                    goulot_val = avg
-                    goulot_nom = nom
-
-        # Machine la plus occupée
-        busiest_nom = "—"
-        busiest_val = -1
-        for nom in noms:
-            raw = hist["busy"].get(nom, [])
-            if raw:
-                pct = sum(raw) / len(raw) * 100
+                    goulot_val = avg  ;  goulot_nom = nom
+            b = hist["busy"].get(nom, [])
+            if b:
+                pct = sum(b) / len(b) * 100
                 if pct > busiest_val:
-                    busiest_val = pct
-                    busiest_nom = nom
+                    busiest_val = pct  ;  busiest_nom = nom
 
-        transit_roll = hist.get("transit_time_rolling", [])
-        last_roll = next((v for v in reversed(transit_roll) if v is not None), None)
-        transit_txt = f"  |  Transit (glissant) : {_fmt_duree(last_roll)}" if last_roll else ""
-        nb_rejetes  = getattr(self.tab_live, "tubes_rejetes", 0)
+        fk_niv = "warning" if goulot_val > 3 else "ok"
+        self._stats_card(self._resume_inner, fk_niv,
+                         "🎀  Goulot étranglement",
+                         [f"File la plus longue : {goulot_nom}",
+                          f"Longueur moy. : {goulot_val:.1f} tube(s)",
+                          f"Machine la plus occupée : {busiest_nom}",
+                          f"Occupation : {busiest_val:.0f} %"])
+
+        # ─ Transit ────────────────────────────────────────────────
+        transit_avg = list(hist.get("transit_time_avg", []))
+        transit_roll = list(hist.get("transit_time_rolling", []))
+        avg_val   = next((v for v in reversed(transit_avg)  if v is not None), None)
+        roll_val  = next((v for v in reversed(transit_roll) if v is not None), None)
+        tr_niv = "warning" if (avg_val and avg_val > 30) else "ok"
+        self._stats_card(self._resume_inner, tr_niv,
+                         "⏱  Temps de transit",
+                         [f"Moyen   : {fmt_duree(avg_val)}",
+                          f"Glissant: {fmt_duree(roll_val)}"])
+
+        # ─ Rejets / dégradés / pannes ────────────────────────────
+        nb_rejetes  = getattr(self.tab_live, "tubes_rejetes",  0)
         nb_degrades = getattr(self.tab_live, "tubes_degrades", 0)
         nb_pannes   = sum(len(v) for v in hist.get("pannes", {}).values())
+        err_niv = "error" if (nb_rejetes + nb_degrades + nb_pannes > 0) else "ok"
+        self._stats_card(self._resume_inner, err_niv,
+                         "⚠  Incidents",
+                         [f"Rejets      : {nb_rejetes}",
+                          f"Dégradés   : {nb_degrades}",
+                          f"Pannes mach.: {nb_pannes}"])
 
-        # Disponibilité théorique par machine (TMEP / (TMEP + TMR))
-        dispos = []
+        # ─ Disponibilité théorique ────────────────────────────────
+        lignes_dispo = []
         for nom in noms:
             m = machines[nom]
             tmep_m = m.get("tmep", 0) or 0
             tmr_m  = m.get("tmr",  0) or 0
             if tmep_m > 0 and tmr_m > 0:
-                dispos.append(f"{nom}={tmep_m/(tmep_m+tmr_m)*100:.0f}%")
-        dispo_txt = ("  |  Dispo théorique : " + "  ".join(dispos)) if dispos else ""
-        # Distances cumulées session (sur tous les jours)
-        dist_session_txt = ""
-        if has_distances:
-            parts = []
-            for nom, jours_dist in distances.items():
-                total_m = sum(jours_dist.values())
-                parts.append(f"{nom} = {total_m:.0f} m")
-            dist_session_txt = "  |  🚶 Dist. session : " + "  /  ".join(parts)
+                dispo = tmep_m / (tmep_m + tmr_m) * 100
+                niv_d = "ok" if dispo >= 90 else ("warning" if dispo >= 70 else "error")
+                lignes_dispo.append(f"{nom} : {dispo:.0f} %")
+        if lignes_dispo:
+            self._stats_card(self._resume_inner, "info",
+                             "📦  Disponibilité théorique",
+                             lignes_dispo)
 
-        self.lbl_info.config(
-            text=(f"Durée sim : {_fmt_duree(t_total)}  |  "
-                  f"Tubes générés : {total_tubes}  |  "
-                  f"File la plus longue : {goulot_nom} (moy {goulot_val:.1f})  |  "
-                  f"Machine la plus occupée : {busiest_nom} ({busiest_val:.0f} %)"
-                  f"{transit_txt}  |  "
-                  f"⚠ Rejets: {nb_rejetes}  Dégradés: {nb_degrades}  Pannes: {nb_pannes}"
-                  f"{dispo_txt}"
-                  f"{dist_session_txt}")
-        )
+        # ─ Distance marchée (texte) ───────────────────────────────
+        if distances and any(bool(v) for v in distances.values()):
+            lignes_dist = []
+            for nom, jours_dist in distances.items():
+                if jours_dist:
+                    total_dist = sum(jours_dist.values())
+                    nb_jours = len(jours_dist)
+                    moy_dist = total_dist / nb_jours if nb_jours else 0
+                    lignes_dist.append(f"{nom} :")
+                    lignes_dist.append(f"  moy/jour : {moy_dist:.0f} m")
+                    lignes_dist.append(f"  total    : {total_dist:.0f} m")
+            if lignes_dist:
+                self._stats_card(self._resume_inner, "neutre",
+                                 "🚶  Distance marchée / tech",
+                                 lignes_dist)
+
+        # ─ Bien-être techniciens ─────────────────────────────────
+        if bienetre_data:
+            from core.technician import TechnicianState
+            _tmp = TechnicianState(0, 0)
+            lignes_be = []
+            pire_niv = "ok"
+            for nom, jours_be in bienetre_data.items():
+                if jours_be:
+                    last_val = jours_be[max(jours_be.keys())]
+                    _tmp.mecontentement = last_val
+                    emoji_be, _, label_be = _tmp.etat_bien_etre()
+                    risque = _tmp.calculer_risque_arret_maladie()
+                    lignes_be.append(f"{emoji_be} {nom} : {label_be}")
+                    if risque > 0.5:
+                        lignes_be.append(f"   ⚠ Risque arrêt : {risque*100:.0f} %")
+                        pire_niv = "warning"
+                    if risque > 0.8:
+                        pire_niv = "error"
+            if lignes_be:
+                self._stats_card(self._resume_inner, pire_niv,
+                                 "🫀  Bien-être techniciens",
+                                 lignes_be)
+
+        # Forcer le recalcul de la zone de défilement
+        self._resume_inner.update_idletasks()
+        self._resume_canvas.configure(
+            scrollregion=self._resume_canvas.bbox("all"))
 
     # ------------------------------------------------------------------
+    def forcer_arret_sim(self):
+        """Délègue le reset brutal à tab_live puis remet l'UI de cet onglet au repos."""
+        if self.tab_live:
+            self.tab_live.forcer_arret()
+        self.btn_fast.config(state="normal")
+        self.btn_stop.config(state="disabled")
+        self.lbl_fast_status.config(text="⏹ Arrêt forcé.")
+        self.progress["value"] = 0
+
+    def lancer_debug_rapide(self):
+        """Délègue au mode DEBUG de tab_live (simulation headless instrumentée)."""
+        if not self.tab_live:
+            self.lbl_fast_status.config(text="Référence simulation manquante.")
+            return
+        if getattr(self.tab_live, "running", False):
+            self.lbl_fast_status.config(text="⚠ Simulation déjà en cours — arrêtez-la d'abord.")
+            return
+        self.btn_stop.config(state="normal")
+        self.btn_fast.config(state="disabled")
+        self.lbl_fast_status.config(text="🐛 DEBUG en cours…")
+        self.tab_live.lancer_debug(on_fin=self._on_debug_termine)
+
+    def _on_debug_termine(self):
+        """Appelé depuis le thread debug quand la session debug se termine."""
+        self.parent.after(0, lambda: (
+            self.btn_stop.config(state="disabled"),
+            self.btn_fast.config(state="normal"),
+            self.lbl_fast_status.config(text="🐛 DEBUG terminé"),
+        ))
+
     def lancer_simulation_rapide(self):
         """Déclenche une simulation headless et affiche les graphiques à la fin."""
         if not self.tab_live:
@@ -443,12 +972,22 @@ class TabStats:
             return
 
         try:
-            duree = float(self.ent_duree.get())
+            duree_jours = float(self.ent_duree.get())
+            if duree_jours <= 0:
+                raise ValueError
+            duree = duree_jours * 1440  # conversion jours → minutes SimPy
         except ValueError:
-            self.lbl_fast_status.config(text="Durée invalide.")
+            self.lbl_fast_status.config(text="Durée invalide (ex : 1, 2, 0.5).")
             return
 
+        # IA désactivée en mode headless — Qwen 32B est synchrone et bloquerait
+        # le thread pour chaque appel (potentiellement des centaines sur 10 jours).
+        self.tab_live.coordinateur.ia_active = False
+
         self.btn_fast.config(state="disabled")
+        self.btn_stop.config(state="normal")
+        if hasattr(self.tab_live, 'btn_reset'):
+            self.tab_live.btn_reset.config(state="normal")
         self.progress["value"] = 0
         self.lbl_fast_status.config(text="⏳ Calcul en cours…")
 
@@ -470,11 +1009,417 @@ class TabStats:
     def _on_simulation_rapide_terminee(self):
         """Appelé sur le thread principal quand la simulation rapide est finie."""
         self.progress["value"] = 100
-        self.lbl_fast_status.config(text="✅ Terminé — graphiques mis à jour")
+        self.lbl_fast_status.config(text="✅ Terminé")
         self.btn_fast.config(state="normal")
+        self.btn_stop.config(state="disabled")
+        if hasattr(self.tab_live, 'btn_reset'):
+            self.tab_live.btn_reset.config(state="disabled")
         self.refresh()
+        # Initialiser la conversation si elle n'existe pas encore (race condition au démarrage)
+        if self._ia_conversation is None:
+            self._ia_init_conversation()
+        self._ia_compte_rendu_auto()
+
+    def _ia_compte_rendu_auto(self):
+        """Envoie automatiquement une demande de compte rendu à l'IA après une sim accélérée.
+        Utilise une conversation fraîche et un contexte tronqué pour éviter les erreurs 413.
+        N'est déclenché qu'en backend cloud (OpenAI/GitHub) — Ollama (modèle local GPU)
+        n'est JAMAIS appelé automatiquement pour éviter de charger la GPU sans action explicite.
+        """
+        if self._ia_en_cours or self._ia_conversation is None:
+            return
+
+        # Refuser silencieusement si le backend est Ollama (modèle local GPU)
+        if self._ia_backend not in ("openai", "github"):
+            self.lbl_fast_status.config(text="✅ Terminé.")
+            return
+
+        stats      = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        aggregator = getattr(self.tab_live, "aggregator",    None) if self.tab_live else None
+
+        # Construire un bloc de métriques compact (agrégateur + métriques enrichies)
+        from core.ai_assistant import (
+            construire_metriques_aggregateur, construire_metriques_block,
+            envoyer_messages_openai, envoyer_messages,
+        )
+        metriques_parties = []
+        if aggregator and aggregator.nb_jours >= 1.0:
+            bloc_agg = construire_metriques_aggregateur(aggregator)
+            if bloc_agg:
+                metriques_parties.append(bloc_agg)
+        if stats:
+            bloc_rich = construire_metriques_block(self._ia_conversation._config, stats)
+            if bloc_rich:
+                metriques_parties.append(bloc_rich)
+        metriques = "\n\n".join(metriques_parties)
+        # Tronquer à 6000 caractères pour rester dans les limites de tokens
+        if len(metriques) > 6000:
+            metriques = metriques[:6000] + "\n… [tronqué pour limite de tokens]"
+
+        QUESTION = (
+            "Fais un compte rendu structuré en trois parties :\n"
+            "1. **Bilan global** : débit, temps de transit moyen, taux de rejet et de dégradation.\n"
+            "2. **Goulots identifiés** : quelles machines ou étapes limitent le flux, avec les chiffres clés.\n"
+            "3. **Recommandations concrètes** : au moins 3 actions précises et réalisables pour améliorer "
+            "le service. Pour chaque recommandation, indique l'impact attendu."
+        )
+
+        system_compact = (
+            "Tu es l'assistant IA de MAGsim. Réponds TOUJOURS en français. "
+            "Tu analyses les résultats d'une simulation de laboratoire médical. "
+            "Cite chaque chiffre avec sa référence [Mx] depuis les métriques ci-dessous. "
+            "Ne calcule rien toi-même — utilise uniquement les chiffres présents dans les métriques.\n\n"
+            f"MÉTRIQUES DE LA SIMULATION :\n{metriques}"
+        )
+        messages_directs = [
+            {"role": "system", "content": system_compact},
+            {"role": "user",   "content": QUESTION},
+        ]
+
+        self._ia_afficher("[Compte rendu automatique]\n\n", "system")
+        self._ia_afficher(f"Vous : {QUESTION}\n\n", "user")
+
+        self._ia_en_cours = True
+        self._ia_stop_event = __import__('threading').Event()
+        self._ia_btn_envoyer.config(state="disabled")
+        self._ia_btn_stop.config(state="normal")
+        self._ia_lbl_statut.config(text="⬤  Réflexion…", fg="#f9e2af")
+        self._ia_afficher("🤖  ", "assistant")
+        self._ia_chat.config(state="normal")
+        self._ia_token_start = self._ia_chat.index("end-1c")
+        self._ia_chat.config(state="disabled")
+        self.lbl_fast_status.config(text="✅ Terminé — génération du compte rendu…")
+
+        _stop    = self._ia_stop_event
+        backend  = self._ia_backend
+        model    = self._ia_model
+        conv     = self._ia_conversation
+
+        def _appel():
+            try:
+                def on_token(tok):
+                    self.parent.after(0, self._ia_on_token, tok)
+                if backend == "openai":
+                    reponse = envoyer_messages_openai(
+                        messages=messages_directs, model=model,
+                        on_token=on_token, stop_event=_stop,
+                    )
+                else:
+                    reponse = envoyer_messages(
+                        messages_directs, model=model,
+                        on_token=on_token, stop_event=_stop,
+                    )
+                # Injecter la réponse dans l'historique de la conv principale
+                conv.ajouter_message_utilisateur(QUESTION)
+                conv.ajouter_message_assistant(reponse)
+                self.parent.after(0, self._ia_finaliser_compte_rendu, reponse)
+            except Exception as e:
+                self.parent.after(0, self._ia_erreur, f"Erreur compte rendu : {e}")
+
+        import threading
+        threading.Thread(target=_appel, daemon=True).start()
+
+    def _ia_finaliser_compte_rendu(self, reponse_brute):
+        """Finalise le compte rendu automatique et met à jour le statut."""
+        self._ia_finaliser(reponse_brute)
+        self.lbl_fast_status.config(text="✅ Terminé — compte rendu généré")
 
     # ------------------------------------------------------------------
+    def _ouvrir_assistant(self):
+        """Ouvre l'assistant IA dans une fenêtre flottante indépendante."""
+        from ui.tab_assistant import TabAssistant
+
+        # Si la fenêtre existe déjà, la remettre au premier plan
+        if self._assistant_window is not None:
+            try:
+                if self._assistant_window.winfo_exists():
+                    self._assistant_window.lift()
+                    self._assistant_window.focus_force()
+                    return
+            except Exception:
+                pass
+
+        win = tk.Toplevel(self.parent)
+        win.title("🤖 Assistant IA — MAGsim")
+        win.geometry("920x700")
+        win.minsize(640, 480)
+        self._assistant_window = win
+
+        # Centrer par rapport à la fenêtre principale
+        self.parent.update_idletasks()
+        root = self.parent.winfo_toplevel()
+        rx = root.winfo_x() + root.winfo_width() // 2 - 460
+        ry = root.winfo_y() + root.winfo_height() // 2 - 350
+        win.geometry(f"920x700+{max(0, rx)}+{max(0, ry)}")
+
+        frame = ttk.Frame(win)
+        frame.pack(expand=True, fill="both")
+        TabAssistant(frame, self.config_manager, tab_live_ref=self.tab_live)
+
+        def _on_close():
+            self._assistant_window = None
+            win.destroy()
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  Assistant IA intégré (panneau central)
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _ia_afficher(self, texte, tag="system"):
+        self._ia_chat.config(state="normal")
+        self._ia_chat.insert("end", texte, tag)
+        self._ia_chat.config(state="disabled")
+        self._ia_chat.see("end")
+
+    def _ia_charger_modeles(self):
+        """Thread : charge les modèles Ollama + OpenAI disponibles."""
+        from core.ai_assistant import (
+            ollama_disponible, lister_modeles,
+            openai_disponible, OPENAI_MODELES,
+        )
+        entrees = []
+        if ollama_disponible():
+            entrees += [f"Ollama │ {m}" for m in lister_modeles()]
+        if openai_disponible():
+            entrees += [f"OpenAI │ {m}" for m in OPENAI_MODELES]
+        self.parent.after(0, self._ia_on_modeles_charges, entrees)
+
+    def _ia_on_modeles_charges(self, entrees):
+        self._ia_combo["values"] = entrees
+
+        if entrees:
+            def _pref(e):
+                return "gpt-4o-mini" in e.lower() or "gpt-4.1-mini" in e.lower() or "llama3" in e.lower()
+            sel = next((e for e in entrees if _pref(e)), entrees[0])
+            self._ia_model_var.set(sel)
+            self._ia_appliquer_selection(sel)
+            self._ia_lbl_statut.config(text=f"⬤  Prêt  [{self._ia_backend.upper()}]", fg="#a6e3a1")
+            self._ia_afficher("Assistant prêt. Posez-moi une question sur la simulation.\n\n", "system")
+            self._ia_init_conversation()
+        else:
+            self._ia_lbl_statut.config(text="⬤  Aucun backend", fg="#f38ba8")
+            self._ia_afficher(
+                "⚠️  Aucun backend disponible.\n"
+                "Option 1 : Installez Ollama (ollama.com)\n"
+                "Option 2 : Configurez une clé OpenAI dans l'onglet Assistant IA (⛯ Clé OpenAI).\n\n",
+                "error",
+            )
+
+    def _ia_appliquer_selection(self, sel):
+        """Extrait backend + nom du modèle depuis une entrée du combobox."""
+        if sel.startswith("OpenAI │ "):
+            self._ia_backend = "openai"
+            self._ia_model   = sel[len("OpenAI │ "):]
+        elif sel.startswith("GitHub │ "):
+            self._ia_backend = "github"
+            self._ia_model   = sel[len("GitHub │ "):]
+        else:
+            self._ia_backend = "ollama"
+            self._ia_model   = sel.split("│ ", 1)[-1] if "│" in sel else sel
+
+    def _ia_on_model_change(self, _event=None):
+        """Callback quand l'utilisateur change de modèle dans le combobox."""
+        sel = self._ia_model_var.get()
+        self._ia_appliquer_selection(sel)
+        self._ia_lbl_statut.config(
+            text=f"⬤  {self._ia_model}  [{self._ia_backend.upper()}]", fg="#a6e3a1"
+        )
+        self._ia_init_conversation()
+
+    def _ia_on_ollama_ok(self, modeles):
+        # Méthode gardée pour compatibilité — redirige vers _ia_on_modeles_charges
+        entrees = [f"Ollama │ {m}" for m in modeles]
+        self._ia_on_modeles_charges(entrees)
+
+    def _ia_on_ollama_absent(self):
+        self._ia_on_modeles_charges([])
+
+    def _ia_init_conversation(self):
+        from core.ai_assistant import Conversation
+        stats      = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        aggregator = getattr(self.tab_live, "aggregator",    None) if self.tab_live else None
+        conv = Conversation(model=self._ia_model, backend=self._ia_backend)
+        conv.initialiser(self.config_manager.data, stats, aggregator=aggregator)
+        self._ia_conversation = conv
+
+    def _ia_actualiser_contexte(self, stats):
+        """Appelé depuis refresh() — met à jour le contexte sans effacer l'historique."""
+        if self._ia_conversation is None:
+            return
+        try:
+            aggregator = getattr(self.tab_live, "aggregator", None) if self.tab_live else None
+            if not self._ia_conversation._has_simulation and stats and stats.get("time"):
+                self._ia_conversation.actualiser_contexte(stats, aggregator=aggregator)
+            elif stats and stats != self._ia_conversation._stats_history:
+                self._ia_conversation.actualiser_contexte(stats, aggregator=aggregator)
+        except Exception:
+            pass
+
+    def _ia_on_entree_rapide(self, event):
+        if not event.state & 0x1:  # Shift non enfoncé
+            self._ia_envoyer()
+            return "break"
+
+    def _ia_envoyer(self):
+        if self._ia_en_cours:
+            return
+        texte = self._ia_saisie.get("1.0", "end").strip()
+        if not texte:
+            return
+        if not self._ia_conversation:
+            messagebox.showwarning("Assistant IA", "Ollama n'est pas disponible.", parent=self.parent)
+            return
+
+        # Rafraîchir le contexte si une nouvelle sim est disponible
+        stats_actuelles = getattr(self.tab_live, "stats_history", None) if self.tab_live else None
+        if stats_actuelles:
+            self._ia_actualiser_contexte(stats_actuelles)
+
+        self._ia_saisie.delete("1.0", "end")
+        self._ia_afficher(f"Vous : {texte}\n\n", "user")
+
+        self._ia_en_cours = True
+        self._ia_stop_event = __import__('threading').Event()
+        self._ia_btn_envoyer.config(state="disabled")
+        self._ia_btn_stop.config(state="normal")
+        self._ia_lbl_statut.config(text="⬤  Réflexion…", fg="#f9e2af")
+        self._ia_afficher("🤖  ", "assistant")
+        self._ia_chat.config(state="normal")
+        self._ia_token_start = self._ia_chat.index("end-1c")
+        self._ia_chat.config(state="disabled")
+
+        _stop = self._ia_stop_event
+
+        def _appel():
+            try:
+                def on_token(tok):
+                    self.parent.after(0, self._ia_on_token, tok)
+                reponse = self._ia_conversation.envoyer(texte, on_token=on_token, stop_event=_stop)
+                self.parent.after(0, self._ia_finaliser, reponse)
+            except ConnectionError as e:
+                self.parent.after(0, self._ia_erreur, str(e))
+            except Exception as e:
+                self.parent.after(0, self._ia_erreur, f"Erreur : {e}")
+
+        threading.Thread(target=_appel, daemon=True).start()
+
+    def _ia_on_token(self, token):
+        self._ia_chat.config(state="normal")
+        self._ia_chat.insert("end", token, "assistant")
+        self._ia_chat.config(state="disabled")
+        self._ia_chat.see("end")
+
+    def _ia_finaliser(self, reponse_brute):
+        from core.ai_assistant import texte_sans_patch
+        self._ia_en_cours = False
+        self._ia_stop_event = None
+        self._ia_btn_envoyer.config(state="normal")
+        self._ia_btn_stop.config(state="disabled")
+        self._ia_lbl_statut.config(text="⬤  Prêt", fg="#a6e3a1")
+        self._ia_chat.config(state="normal")
+        self._ia_chat.delete(self._ia_token_start, "end")
+        texte_propre = texte_sans_patch(reponse_brute)
+        self._ia_chat.insert("end", texte_propre + "\n\n", "assistant")
+        self._ia_chat.config(state="disabled")
+        self._ia_chat.see("end")
+
+    def _ia_stopper(self):
+        """Interrompt la génération en cours."""
+        if self._ia_stop_event:
+            self._ia_stop_event.set()
+        self._ia_afficher("\n[Arrêté]\n\n", "system")
+        self._ia_en_cours = False
+        self._ia_btn_envoyer.config(state="normal")
+        self._ia_btn_stop.config(state="disabled")
+        self._ia_lbl_statut.config(text="⬤  Prêt", fg="#a6e3a1")
+
+    def _ia_dialog_sources(self):
+        """Fenêtre affichant le dernier bloc MÉTRIQUES VÉRIFIABLES utilisé."""
+        import re
+        metriques = (
+            self._ia_conversation._dernieres_metriques
+            if self._ia_conversation else ""
+        )
+        if not metriques:
+            from tkinter import messagebox
+            messagebox.showinfo(
+                "Sources",
+                "Aucune métrique disponible.\nLancez d'abord une simulation.",
+                parent=self.parent,
+            )
+            return
+
+        dlg = tk.Toplevel(self.parent)
+        dlg.title("📊 Métriques vérifiables")
+        dlg.configure(bg="#1e1e2e")
+        dlg.resizable(True, True)
+        dlg.geometry("600x480")
+        dlg.transient(self.parent)
+
+        tk.Label(dlg,
+                 text="📊  Chiffres utilisés par l'IA",
+                 font=theme.FONT_SECTION,
+                 bg="#1e1e2e", fg="#cba6f7",
+                 anchor="w", padx=12, pady=8).pack(fill="x")
+        tk.Label(dlg,
+                 text="Chaque [Mx] cité dans une réponse correspond à une ligne ci-dessous.",
+                 font=theme.FONT_NOTE + ("italic",),
+                 bg="#1e1e2e", fg="#585b70",
+                 anchor="w", padx=12).pack(fill="x")
+        tk.Frame(dlg, bg="#313145", height=1).pack(fill="x", pady=(4, 0))
+
+        frame_txt = tk.Frame(dlg, bg="#1e1e2e")
+        frame_txt.pack(fill="both", expand=True, padx=8, pady=8)
+        frame_txt.rowconfigure(0, weight=1)
+        frame_txt.columnconfigure(0, weight=1)
+
+        txt = tk.Text(
+            frame_txt,
+            font=("Consolas", 9),
+            bg="#181825", fg="#cdd6f4",
+            relief="flat", bd=0,
+            wrap="none",
+            padx=10, pady=8,
+        )
+        sb_v = ttk.Scrollbar(frame_txt, orient="vertical",   command=txt.yview)
+        sb_h = ttk.Scrollbar(frame_txt, orient="horizontal", command=txt.xview)
+        txt.configure(yscrollcommand=sb_v.set, xscrollcommand=sb_h.set)
+        sb_v.grid(row=0, column=1, sticky="ns")
+        sb_h.grid(row=1, column=0, sticky="ew")
+        txt.grid(row=0, column=0, sticky="nsew")
+
+        txt.tag_config("num",  foreground="#a6e3a1", font=("Consolas", 9, "bold"))
+        txt.tag_config("warn", foreground="#f9e2af")
+
+        txt.config(state="normal")
+        for ligne in metriques.splitlines():
+            if re.search(r"\[M\d+\]", ligne):
+                parts = re.split(r"(\[M\d+\])", ligne)
+                for p in parts:
+                    if re.match(r"\[M\d+\]", p):
+                        txt.insert("end", p, "num")
+                    elif "⚠" in p or "SURCHARG" in p:
+                        txt.insert("end", p, "warn")
+                    else:
+                        txt.insert("end", p)
+                txt.insert("end", "\n")
+            elif "===" in ligne or "---" in ligne:
+                txt.insert("end", ligne + "\n", "num")
+            else:
+                txt.insert("end", ligne + "\n")
+        txt.config(state="disabled")
+
+        ttk.Button(dlg, text="Fermer", command=dlg.destroy,
+                   padding=(10, 4)).pack(side=tk.BOTTOM, pady=(0, 10))
+
+    def _ia_erreur(self, msg):
+        self._ia_en_cours = False
+        self._ia_stop_event = None
+        self._ia_btn_envoyer.config(state="normal")
+        self._ia_btn_stop.config(state="disabled")
+        self._ia_lbl_statut.config(text="⬤  Erreur", fg="#f38ba8")
+        self._ia_afficher(f"⚠️  {msg}\n\n", "error")
+
     def clear_history(self):
         if self.tab_live:
             self.tab_live.stats_history = {"time": [], "queues": {}, "output": {}, "busy": {}, "entry": [],
@@ -486,4 +1431,10 @@ class TabStats:
         if HAS_MATPLOTLIB:
             self.fig.clear()
             self.canvas_mpl.draw()
-        self.lbl_info.config(text="Historique effacé.")
+        # Vider le panneau résumé
+        for w in self._resume_inner.winfo_children():
+            w.destroy()
+        tk.Label(self._resume_inner,
+                 text="Historique effacé.\nLancez une simulation\npuis cliquez sur Actualiser.",
+                 font=("Segoe UI", 9, "italic"), bg="#f8f9fa", fg="#999",
+                 justify="center", pady=20).pack()

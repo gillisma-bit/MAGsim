@@ -1,12 +1,39 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, colorchooser
+from ui.dialog_rh import FenetreRH
+import ui.theme as theme
+
+# Tailles par défaut (largeur_cases × hauteur_cases) pour chaque type de machine
+_TAILLES_DEFAUT = {
+    "Centrifugeuse":    (1, 1),
+    "Automate":         (2, 1),
+    "Paillasse":        (2, 1),
+    "Incubateur":       (1, 1),
+    "Réfrigérateur":    (1, 2),
+    "Laveur de plaque": (2, 1),
+    "Lecteur de plaque":(1, 1),
+    "Bain-marie":       (1, 1),
+    "Agitateur":        (1, 1),
+    "Microscope":       (1, 1),
+    "Hotte":            (3, 1),
+    "Congélateur":      (1, 2),
+    "ENTREE":           (1, 1),
+    "SORTIE":           (1, 1),
+    "REPOS":            (1, 1),
+}
 
 class TabConfig:
     def __init__(self, parent, config_manager):
         self.parent = parent
         self.config_manager = config_manager
         self.selected_machine = None
-        
+
+        # --- DRAG & DROP ---
+        self._drag_machine = None   # nom de la machine en cours de drag
+        self._drag_last_x  = 0     # dernière position canvas x
+        self._drag_last_y  = 0     # dernière position canvas y
+        self._drag_moved   = False  # déplacement réel (vs simple clic)
+
         # --- PARAMÈTRES MÉTRIQUES ---
         self.grid_size = 50  # 1 carreau = 50px = 50cm
         self.mode = "SELECT" 
@@ -32,11 +59,12 @@ class TabConfig:
         self.charger_config_existante()
         
         # Bindings
-        self.canvas.bind("<Button-1>", self.on_canvas_click)
-        self.canvas.bind("<B1-Motion>", self.on_canvas_drag)
+        self.canvas.bind("<Button-1>",        self.on_canvas_click)
+        self.canvas.bind("<B1-Motion>",       self.on_canvas_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_canvas_release)
 
     def setup_ui_elements(self):
-        ttk.Label(self.edit_frame, text="🏗️ ÉDITEUR MAGsim", font=("Segoe UI", 12, "bold")).pack(pady=(0, 10))
+        ttk.Label(self.edit_frame, text="🏗️ ÉDITEUR MAGsim", font=theme.FONT_TITLE).pack(pady=(0, 10))
         
         # MODES DE DESSIN
         frame_modes = ttk.LabelFrame(self.edit_frame, text="Outils de sol", padding=10)
@@ -46,30 +74,94 @@ class TabConfig:
         ttk.Button(frame_modes, text="⬛ Mur (Noir)", command=lambda: self.set_mode("WALL")).pack(fill="x", pady=2)
         ttk.Button(frame_modes, text="🧹 Gomme", command=lambda: self.set_mode("FLOOR")).pack(fill="x", pady=2)
 
+        # Échelle du plan
+        f_echelle = ttk.LabelFrame(self.edit_frame, text="📏 Échelle du plan", padding=8)
+        f_echelle.pack(fill="x", pady=(8, 0))
+        ttk.Label(f_echelle, text="1 case =", font=theme.FONT_BODY).grid(row=0, column=0, sticky="w")
+        self.ent_mpc = ttk.Entry(f_echelle, width=6)
+        ent_mpc_val = self.config_manager.data.get("personnel", {}).get("metres_par_case", 3.0)
+        self.ent_mpc.insert(0, ent_mpc_val)
+        self.ent_mpc.grid(row=0, column=1, padx=4)
+        ttk.Label(f_echelle, text="mètres", font=theme.FONT_BODY).grid(row=0, column=2, sticky="w")
+        ttk.Button(f_echelle, text="✓ Appliquer",
+                   command=self._sauver_echelle).grid(row=0, column=3, padx=(6, 0))
+        ttk.Label(f_echelle, text="(1 case = 50 px)",
+                  foreground="gray", font=theme.FONT_NOTE).grid(
+            row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
+
+        # Personnel
+        f_horaires = ttk.LabelFrame(self.edit_frame, text="👥 Personnel", padding=8)
+        f_horaires.pack(fill="x", pady=(8, 0))
+        ttk.Button(
+            f_horaires,
+            text="👥  Gérer le personnel",
+            command=self._ouvrir_rh,
+        ).pack(fill="x", pady=2)
+
         ttk.Separator(self.edit_frame).pack(fill="x", pady=15)
 
         # GESTION DES PROCÉDURES
-        ttk.Label(self.edit_frame, text="🔬 PROCÉDURES", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(self.edit_frame, text="🔬 PROCÉDURES", font=theme.FONT_SECTION).pack(anchor="w")
         ttk.Button(self.edit_frame, text="⚙️ Gérer les procédures de tubes", command=self.ouvrir_editeur_workflows).pack(fill="x", pady=5)
 
         ttk.Separator(self.edit_frame).pack(fill="x", pady=15)
 
         # AJOUT MACHINE
-        ttk.Label(self.edit_frame, text="📦 MACHINE", font=("Segoe UI", 10, "bold")).pack(anchor="w")
+        ttk.Label(self.edit_frame, text="📦 MACHINE", font=theme.FONT_SECTION).pack(anchor="w")
         self.ent_nom = ttk.Entry(self.edit_frame)
         self.ent_nom.pack(fill="x", pady=5)
         
-        self.combo_type = ttk.Combobox(self.edit_frame, values=["Centrifugeuse", "Automate", "Paillasse", "ENTREE", "SORTIE", "TECH_OFFICE"])
+        self.combo_type = ttk.Combobox(self.edit_frame, values=[
+            "Centrifugeuse", "Automate", "Paillasse",
+            "Incubateur", "Réfrigérateur", "Laveur de plaque",
+            "Lecteur de plaque", "Bain-marie", "Agitateur",
+            "Microscope", "Hotte", "Congélateur",
+            "ENTREE", "SORTIE", "REPOS",
+        ])
         self.combo_type.pack(fill="x", pady=5)
         self.combo_type.set("Centrifugeuse")
+        self.combo_type.bind("<<ComboboxSelected>>", self._on_type_change)
+
+        # Dimensions avant placement
+        f_dim_pre = ttk.LabelFrame(self.edit_frame, text="📐 Dimensions (cases)", padding=6)
+        f_dim_pre.pack(fill="x", pady=(0, 4))
+        f_dim_row = ttk.Frame(f_dim_pre)
+        f_dim_row.pack(fill="x")
+        ttk.Label(f_dim_row, text="Larg :").pack(side="left")
+        self.spin_larg = ttk.Spinbox(f_dim_row, from_=1, to=10, width=4)
+        self.spin_larg.pack(side="left", padx=(2, 8))
+        ttk.Label(f_dim_row, text="Haut :").pack(side="left")
+        self.spin_haut = ttk.Spinbox(f_dim_row, from_=1, to=10, width=4)
+        self.spin_haut.pack(side="left", padx=2)
+        # Valeurs par défaut du premier type
+        larg0, haut0 = _TAILLES_DEFAUT.get("Centrifugeuse", (1, 1))
+        self.spin_larg.set(larg0)
+        self.spin_haut.set(haut0)
+        ttk.Label(f_dim_pre, text="(auto selon type — modifiez si besoin)",
+                  foreground="gray", font=("Segoe UI", 7)).pack(anchor="w")
 
         ttk.Button(self.edit_frame, text="📍 Placer au centre", command=lambda: self.set_mode("PLACE_MACHINE")).pack(fill="x", pady=10)
 
         # Bouton Supprimer (en rouge pour la sécurité)
-        self.btn_suppr = tk.Button(self.edit_frame, text="🗑️ Supprimer la sélection", 
-                                   bg="#ec4a38", fg="white", font=("Segoe UI", 9, "bold"),
+        self.btn_suppr = tk.Button(self.edit_frame, text="🗑️ Supprimer la sélection",
+                                   bg=theme.BTN_DEL_BG, fg=theme.BTN_DEL_FG,
+                                   font=theme.FONT_BTN_DEL,
                                    command=self.supprimer_selection)
         self.btn_suppr.pack(fill="x", pady=5)
+
+    def _sauver_echelle(self):
+        try:
+            mpc = max(0.1, float(self.ent_mpc.get()))
+        except ValueError:
+            return
+        if "personnel" not in self.config_manager.data:
+            self.config_manager.data["personnel"] = {}
+        self.config_manager.data["personnel"]["metres_par_case"] = mpc
+        self.config_manager.sauvegarder()
+
+    def _ouvrir_rh(self):
+        FenetreRH(self.parent, self.config_manager,
+                  refresh_callback=self._refresh_plan_machines)
 
     def set_mode(self, mode):
         self.mode = mode
@@ -85,19 +177,92 @@ class TabConfig:
         x_c = self.canvas.canvasx(event.x)
         y_c = self.canvas.canvasy(event.y)
         col, row = int(x_c // self.grid_size), int(y_c // self.grid_size)
-        
+
         if self.mode == "PLACE_MACHINE":
             self.placer_machine_centree(col, row)
         elif self.mode in ["COUNTER", "WALL", "FLOOR"]:
             self.peindre_case(col, row)
-        else:
-            self.selectionner_objet(x_c, y_c)
+        else:  # SELECT — préparer un éventuel drag
+            self._drag_machine = None
+            self._drag_moved   = False
+            items = self.canvas.find_overlapping(x_c - 2, y_c - 2, x_c + 2, y_c + 2)
+            for item in items:
+                for t in self.canvas.gettags(item):
+                    if t.startswith("obj_"):
+                        self._drag_machine = t.replace("obj_", "")
+                        self._drag_last_x  = x_c
+                        self._drag_last_y  = y_c
+                        self.selected_machine = self._drag_machine
+                        self.canvas.config(cursor="fleur")
+                        return
 
     def on_canvas_drag(self, event):
         if self.mode in ["COUNTER", "WALL", "FLOOR"]:
             x = self.canvas.canvasx(event.x)
             y = self.canvas.canvasy(event.y)
             self.peindre_case(int(x // self.grid_size), int(y // self.grid_size))
+        elif self.mode == "SELECT" and self._drag_machine:
+            x_c = self.canvas.canvasx(event.x)
+            y_c = self.canvas.canvasy(event.y)
+            dx  = x_c - self._drag_last_x
+            dy  = y_c - self._drag_last_y
+            self.canvas.move(f"obj_{self._drag_machine}", dx, dy)
+            self._drag_last_x = x_c
+            self._drag_last_y = y_c
+            self._drag_moved  = True
+
+    def on_canvas_release(self, event):
+        """Finalise le drag (snap grille + sauvegarde) ou ouvre le popup (simple clic)."""
+        if self.mode != "SELECT" or self._drag_machine is None:
+            return
+
+        nom = self._drag_machine
+
+        if self._drag_moved:
+            # ── Snap au centre de la case la plus proche ────────────────────
+            bbox = self.canvas.bbox(f"obj_{nom}")
+            if bbox:
+                curr_cx = (bbox[0] + bbox[2]) / 2
+                curr_cy = (bbox[1] + bbox[3]) / 2
+                # Utiliser le dict brut pour inclure les machines en zone tampon
+                raw_machines = self.config_manager.data.get("machines", {})
+                m_snap = raw_machines.get(nom, {})
+                larg_s = m_snap.get("largeur_cases", 1)
+                haut_s = m_snap.get("hauteur_cases", 1)
+                col = max(0, round(curr_cx / self.grid_size - larg_s / 2))
+                row = max(0, round(curr_cy / self.grid_size - haut_s / 2))
+                snap_cx = col * self.grid_size + larg_s * self.grid_size / 2
+                snap_cy = row * self.grid_size + haut_s * self.grid_size / 2
+                # Déplacement résiduel pour aligner précisément
+                self.canvas.move(f"obj_{nom}", snap_cx - curr_cx, snap_cy - curr_cy)
+                # Sauvegarder la nouvelle position (via dict brut pour éviter le filtre get_machines)
+                if nom in raw_machines:
+                    raw_machines[nom].setdefault("coords", {})
+                    raw_machines[nom]["coords"]["x"] = snap_cx
+                    raw_machines[nom]["coords"]["y"] = snap_cy
+                    # Retirer le flag de staging si la machine vient de la zone tampon
+                    if raw_machines[nom].get("en_attente_placement"):
+                        raw_machines[nom].pop("en_attente_placement", None)
+                        # Redessiner en couleur normale (sans tag staging)
+                        self.canvas.delete(f"obj_{nom}")
+                        self.dessiner_bloc_machine(snap_cx, snap_cy, nom, raw_machines[nom]["type"],
+                                                   raw_machines[nom].get("largeur_cases"),
+                                                   raw_machines[nom].get("hauteur_cases"))
+                        self._dessiner_zone_staging()
+                    self.config_manager.sauvegarder()
+                    # Si c'est le marqueur REPOS, syncer dans personnel.zone_repos
+                    if raw_machines[nom].get("type") == "REPOS":
+                        self.config_manager.data.setdefault("personnel", {})["zone_repos"] = {
+                            "x": snap_cx, "y": snap_cy
+                        }
+                        self.config_manager.sauvegarder()
+        else:
+            # Simple clic : ouvrir le popup de configuration
+            self.ouvrir_popup_machine()
+
+        self._drag_machine = None
+        self._drag_moved   = False
+        self.canvas.config(cursor="")
 
     def peindre_case(self, col, row):
         tag_case = f"tile_{col}_{row}"
@@ -116,63 +281,215 @@ class TabConfig:
         if hasattr(self.config_manager, 'sauver_tuile_sol'):
             self.config_manager.sauver_tuile_sol(col, row, self.mode)
 
+    def _on_type_change(self, event=None):
+        """Met à jour les spinbox Larg/Haut quand on change le type de machine."""
+        type_m = self.combo_type.get()
+        larg, haut = _TAILLES_DEFAUT.get(type_m, (1, 1))
+        self.spin_larg.set(larg)
+        self.spin_haut.set(haut)
+
+    def _detecter_orientation(self, col, row, largeur, hauteur):
+        """Swap largeur/hauteur si un mur vertical est adjacent (machine posée contre un mur latéral)."""
+        if largeur == hauteur:
+            return largeur, hauteur
+        sol = self.config_manager.data.get("sol", {})
+        mur_gauche = sol.get(f"{col - 1}_{row}") == "WALL"
+        mur_droite = sol.get(f"{col + largeur}_{row}") == "WALL"
+        if mur_gauche or mur_droite:
+            return hauteur, largeur  # rotation 90°
+        return largeur, hauteur
+
     def placer_machine_centree(self, col, row):
         nom = self.ent_nom.get().strip()
         if not nom:
             messagebox.showwarning("Erreur", "Veuillez entrer un nom pour la machine.")
             return
-        cx = (col * self.grid_size) + (self.grid_size // 2)
-        cy = (row * self.grid_size) + (self.grid_size // 2)
         type_m = self.combo_type.get()
-        self.dessiner_bloc_machine(cx, cy, nom, type_m)
+        try:
+            larg = max(1, int(self.spin_larg.get()))
+            haut = max(1, int(self.spin_haut.get()))
+        except ValueError:
+            larg, haut = _TAILLES_DEFAUT.get(type_m, (1, 1))
+        larg, haut = self._detecter_orientation(col, row, larg, haut)
+        cx = col * self.grid_size + larg * self.grid_size / 2
+        cy = row * self.grid_size + haut * self.grid_size / 2
+        self.dessiner_bloc_machine(cx, cy, nom, type_m, larg, haut)
         self.config_manager.ajouter_modifier_machine(nom, type_m, cx, cy, 4, {})
+        # Sauvegarder les dimensions dans la config
+        self.config_manager.data["machines"][nom]["largeur_cases"] = larg
+        self.config_manager.data["machines"][nom]["hauteur_cases"] = haut
+        self.config_manager.sauvegarder()
         self.set_mode("SELECT")
 
-    def dessiner_bloc_machine(self, x, y, nom, type_m):
+    def dessiner_bloc_machine(self, x, y, nom, type_m, largeur_cases=None, hauteur_cases=None):
+        # Taille par défaut selon le type si non précisé
+        if largeur_cases is None or hauteur_cases is None:
+            larg_def, haut_def = _TAILLES_DEFAUT.get(type_m, (1, 1))
+            if largeur_cases is None:
+                largeur_cases = larg_def
+            if hauteur_cases is None:
+                hauteur_cases = haut_def
         # Palette de couleurs par type
         couleurs = {
-            "Centrifugeuse": "#3498db", # Bleu
-            "Automate": "#e67e22",      # Orange
-            "ENTREE": "#2ecc71",        # Vert (Source)
-            "SORTIE": "#e74c3c",        # Rouge (Puits)
-            "Paillasse": "#95a5a6",     # Gris
-            "TECH_OFFICE": "#95a5a6"    # Gris pour bureau tech
+            "Centrifugeuse":   "#3498db",  # Bleu
+            "Automate":        "#e67e22",  # Orange
+            "Paillasse":       "#95a5a6",  # Gris
+            "Incubateur":      "#e91e63",  # Rose
+            "Réfrigérateur":   "#00bcd4",  # Cyan
+            "Laveur de plaque":"#009688",  # Teal
+            "Lecteur de plaque":"#4caf50", # Vert clair
+            "Bain-marie":      "#ff5722",  # Rouge-orangé
+            "Agitateur":       "#9c27b0",  # Violet
+            "Microscope":      "#607d8b",  # Bleu-gris
+            "Hotte":           "#795548",  # Marron
+            "Congélateur":     "#5c6bc0",  # Indigo
+            "ENTREE":          "#2ecc71",  # Vert (Source)
+            "SORTIE":          "#e74c3c",  # Rouge (Puits)
+            "TECH_OFFICE":     "#95a5a6",  # Gris bureau tech
+            "REPOS":           "#8e44ad",  # Violet zone repos
         }
         color = couleurs.get(type_m, "#34495e")
-        
-        size = self.grid_size * 0.8 / 2
+
+        half_w = largeur_cases * self.grid_size * 0.45
+        half_h = hauteur_cases * self.grid_size * 0.45
         tag = f"obj_{nom}"
-        
-        self.canvas.create_rectangle(x-size, y-size, x+size, y+size, 
+
+        self.canvas.create_rectangle(x - half_w, y - half_h, x + half_w, y + half_h,
                                      fill=color, outline="white", width=2, tags=("machine", tag))
-        self.canvas.create_text(x, y, text=nom[:3], fill="white", font=("Arial", 8, "bold"), tags=("machine", tag))
+        # Texte plus long si la machine est plus large
+        max_chars = 3 + (largeur_cases - 1) * 2
+        self.canvas.create_text(x, y, text=nom[:max_chars], fill="white",
+                                font=("Arial", 8, "bold"), tags=("machine", tag))
 
     def selectionner_objet(self, x, y):
-        items = self.canvas.find_overlapping(x-2, y-2, x+2, y+2)
+        """Sélectionne la machine sous le curseur (sans ouvrir le popup)."""
+        items = self.canvas.find_overlapping(x - 2, y - 2, x + 2, y + 2)
         self.selected_machine = None
         for item in items:
-            tags = self.canvas.gettags(item)
-            for t in tags:
+            for t in self.canvas.gettags(item):
                 if t.startswith("obj_"):
                     self.selected_machine = t.replace("obj_", "")
-                    # OUVERTURE DU POPUP
-                    self.ouvrir_popup_machine()
                     return
 
     def ouvrir_popup_machine(self):
-        m_data = self.config_manager.get_machines()[self.selected_machine]
+        import traceback as _tb
+        try:
+            self._ouvrir_popup_machine_impl()
+        except Exception as _e:
+            print(f"[TabConfig] ERREUR popup machine : {_e}")
+            _tb.print_exc()
+
+    def _ouvrir_popup_machine_impl(self):
+        # Cherche d'abord dans les machines filtrées, puis dans le dict brut
+        toutes = self.config_manager.get_machines()
+        if self.selected_machine not in toutes:
+            toutes = self.config_manager.data.get("machines", {})
+        if self.selected_machine not in toutes:
+            return
+        m_data = toutes[self.selected_machine]
         type_m = m_data['type']
         
         popup = tk.Toplevel(self.parent)
         popup.title(f"Config : {self.selected_machine}")
-        popup.geometry("550x700")
+        popup.geometry("780x820")
+        popup.minsize(720, 700)
         popup.grab_set()
 
         ttk.Label(popup, text=f"⚙️ {type_m.upper()} : {self.selected_machine}", 
                   font=("Segoe UI", 12, "bold")).pack(pady=10)
 
+        # --- CAS STOCKAGE : Réfrigérateur, Congélateur ---
+        _TYPES_STOCKAGE = {"Réfrigérateur", "Congélateur"}
         # --- CAS 1 : LES MACHINES DE TRAITEMENT ---
-        if type_m in ["Centrifugeuse", "Automate", "Paillasse"]:
+        _TYPES_SPECIAUX = {"ENTREE", "SORTIE", "TECH_OFFICE", "REPOS"}
+        if type_m in _TYPES_STOCKAGE:
+            # ─── Popup STOCKAGE ───────────────────────────────────────────────
+            f_s = ttk.LabelFrame(popup, text="🧊 Paramètres de stockage", padding=12)
+            f_s.pack(fill="x", padx=20, pady=10)
+
+            ttk.Label(f_s, text="Capacité max (tubes) :").grid(row=0, column=0, sticky="w")
+            ent_cap_s = ttk.Entry(f_s, width=10)
+            ent_cap_s.insert(0, m_data.get("capacite_max", m_data.get("file_max", 50)))
+            ent_cap_s.grid(row=0, column=1, padx=5, pady=3)
+            ttk.Label(f_s, text="(nbre total de tubes stockables simultanément)",
+                      foreground="gray").grid(row=0, column=2, padx=5)
+
+            ttk.Label(f_s, text="Conditions / température :").grid(row=1, column=0, sticky="w")
+            ent_temp = ttk.Entry(f_s, width=20)
+            ent_temp.insert(0, m_data.get("temperature_label", "4 °C" if type_m == "Réfrigérateur" else "-20 °C"))
+            ent_temp.grid(row=1, column=1, columnspan=2, padx=5, pady=3, sticky="w")
+
+            # Dimensions
+            larg_def_s, haut_def_s = _TAILLES_DEFAUT.get(type_m, (1, 2))
+            f_dim_s = ttk.LabelFrame(popup, text="📐 Dimensions (cases)", padding=8)
+            f_dim_s.pack(fill="x", padx=20, pady=(0, 6))
+            ttk.Label(f_dim_s, text="Largeur :").grid(row=0, column=0, sticky="w")
+            ent_larg_s = ttk.Entry(f_dim_s, width=6)
+            ent_larg_s.insert(0, m_data.get("largeur_cases", larg_def_s))
+            ent_larg_s.grid(row=0, column=1, padx=5)
+            ttk.Label(f_dim_s, text="Hauteur :").grid(row=0, column=2, sticky="w", padx=(10, 0))
+            ent_haut_s = ttk.Entry(f_dim_s, width=6)
+            ent_haut_s.insert(0, m_data.get("hauteur_cases", haut_def_s))
+            ent_haut_s.grid(row=0, column=3, padx=5)
+
+            # Fiabilité (pannes éventuelles du frigo)
+            f_fiab_s = ttk.LabelFrame(popup, text="🔧 Fiabilité (optionnel)", padding=10)
+            f_fiab_s.pack(fill="x", padx=20, pady=(0, 6))
+            ttk.Label(f_fiab_s, text="TMEP — Temps moyen entre pannes (h) :").grid(row=0, column=0, sticky="w")
+            ent_tmep_s = ttk.Entry(f_fiab_s, width=10)
+            ent_tmep_s.insert(0, m_data.get("tmep", 0))
+            ent_tmep_s.grid(row=0, column=1, padx=5, pady=2)
+            ttk.Label(f_fiab_s, text="0 = jamais en panne", foreground="gray").grid(row=0, column=2, padx=4)
+            ttk.Label(f_fiab_s, text="TMR — Temps moyen de réparation (h) :").grid(row=1, column=0, sticky="w")
+            ent_tmr_s = ttk.Entry(f_fiab_s, width=10)
+            ent_tmr_s.insert(0, m_data.get("tmr", 0))
+            ent_tmr_s.grid(row=1, column=1, padx=5, pady=2)
+
+            def save_stockage():
+                try:
+                    cap_s = max(1, int(ent_cap_s.get()))
+                except ValueError:
+                    cap_s = 50
+                m_data["capacite_max"] = cap_s
+                m_data["file_max"]     = cap_s
+                m_data["capacite"]     = cap_s
+                m_data["temperature_label"] = ent_temp.get().strip()
+                m_data["sous_categorie"] = "STOCKAGE"
+                try:
+                    nl = max(1, int(ent_larg_s.get()))
+                    nh = max(1, int(ent_haut_s.get()))
+                except ValueError:
+                    nl, nh = larg_def_s, haut_def_s
+                m_data["largeur_cases"] = nl
+                m_data["hauteur_cases"] = nh
+                try:
+                    tv = float(ent_tmep_s.get())
+                    rv = float(ent_tmr_s.get())
+                    if tv > 0 and rv > 0:
+                        m_data["tmep"] = tv
+                        m_data["tmr"]  = rv
+                    else:
+                        m_data.pop("tmep", None)
+                        m_data.pop("tmr",  None)
+                except ValueError:
+                    pass
+                self.config_manager.sauvegarder()
+                if self.selected_machine:
+                    self.canvas.delete(f"obj_{self.selected_machine}")
+                    mx = self.config_manager.data["machines"][self.selected_machine]["coords"]["x"]
+                    my = self.config_manager.data["machines"][self.selected_machine]["coords"]["y"]
+                    self.dessiner_bloc_machine(mx, my, self.selected_machine, type_m, nl, nh)
+                popup.destroy()
+
+            frame_bas_s = ttk.Frame(popup)
+            frame_bas_s.pack(side=tk.BOTTOM, fill="x", pady=8, padx=20)
+            ttk.Button(frame_bas_s, text="💾 SAUVER", command=save_stockage, padding=10).pack()
+
+        elif type_m not in _TYPES_SPECIAUX:
+            # --- Bouton SAUVER ancré en bas (avant le contenu pour rester visible) ---
+            frame_bas = ttk.Frame(popup)
+            frame_bas.pack(side=tk.BOTTOM, fill="x", pady=8, padx=20)
+
             # --- PARAMÈTRES ---
             f_p = ttk.LabelFrame(popup, text="Capacité & Seuil", padding=10)
             f_p.pack(fill="x", padx=20)
@@ -189,6 +506,21 @@ class TabConfig:
             ttk.Label(f_p, text="Seuil de lancement :").grid(row=2, column=0, sticky="w")
             ent_seuil = ttk.Entry(f_p, width=10); ent_seuil.insert(0, m_data.get("seuil", 1))
             ent_seuil.grid(row=2, column=1, padx=5, pady=2)
+
+            # --- DIMENSIONS ---
+            larg_def, haut_def = _TAILLES_DEFAUT.get(type_m, (1, 1))
+            f_dim = ttk.LabelFrame(popup, text="📏 Dimensions (cases)", padding=8)
+            f_dim.pack(fill="x", padx=20, pady=(0, 4))
+            ttk.Label(f_dim, text="Largeur :").grid(row=0, column=0, sticky="w")
+            ent_larg = ttk.Entry(f_dim, width=6)
+            ent_larg.insert(0, m_data.get("largeur_cases", larg_def))
+            ent_larg.grid(row=0, column=1, padx=5)
+            ttk.Label(f_dim, text="Hauteur :").grid(row=0, column=2, sticky="w", padx=(10, 0))
+            ent_haut = ttk.Entry(f_dim, width=6)
+            ent_haut.insert(0, m_data.get("hauteur_cases", haut_def))
+            ent_haut.grid(row=0, column=3, padx=5)
+            ttk.Label(f_dim, text="(1 case ≈ 50 cm — modifiez pour agrandir l’appareil)",
+                      foreground="gray").grid(row=1, column=0, columnspan=4, sticky="w", pady=(2, 0))
 
             # --- LISTE FILTRÉE DES PROTOCOLES ---
             ttk.Label(popup, text=f"Protocoles compatibles avec {type_m} :", font=("Arial", 9, "bold")).pack(pady=5)
@@ -248,13 +580,13 @@ class TabConfig:
             f_fiab = ttk.LabelFrame(popup, text="🔧 Fiabilité & pannes (loi exponentielle)", padding=10)
             f_fiab.pack(fill="x", padx=20, pady=(0, 5))
 
-            ttk.Label(f_fiab, text="TMEP — Temps moyen entre pannes (min) :").grid(row=0, column=0, sticky="w")
+            ttk.Label(f_fiab, text="TMEP — Temps moyen entre pannes (h) :").grid(row=0, column=0, sticky="w")
             ent_tmep = ttk.Entry(f_fiab, width=10)
             ent_tmep.insert(0, m_data.get("tmep", 0))
             ent_tmep.grid(row=0, column=1, padx=5, pady=2)
             ttk.Label(f_fiab, text="0 = pas de pannes", foreground="gray").grid(row=0, column=2, padx=4)
 
-            ttk.Label(f_fiab, text="TMR — Temps moyen de réparation (min) :").grid(row=1, column=0, sticky="w")
+            ttk.Label(f_fiab, text="TMR — Temps moyen de réparation (h) :").grid(row=1, column=0, sticky="w")
             ent_tmr = ttk.Entry(f_fiab, width=10)
             ent_tmr.insert(0, m_data.get("tmr", 0))
             ent_tmr.grid(row=1, column=1, padx=5, pady=2)
@@ -264,7 +596,7 @@ class TabConfig:
             if _tmep_v > 0 and _tmr_v > 0:
                 _dispo = _tmep_v / (_tmep_v + _tmr_v) * 100
                 _c = "#27ae60" if _dispo >= 90 else "#e67e22" if _dispo >= 75 else "#e74c3c"
-                _txt = f"→ Disponibilité théorique : {_dispo:.1f} %   (TMEP={_tmep_v:.0f} min / TMR={_tmr_v:.0f} min)"
+                _txt = f"→ Disponibilité théorique : {_dispo:.1f} %   (TMEP={_tmep_v:.1f} h / TMR={_tmr_v:.1f} h)"
             else:
                 _c, _txt = "#27ae60", "→ Disponibilité théorique : 100 % (pannes désactivées)"
             ttk.Label(f_fiab, text=_txt, foreground=_c, font=("Segoe UI", 9, "bold")).grid(
@@ -292,6 +624,14 @@ class TabConfig:
                 m_data["capacite"] = int(ent_cap.get())
                 m_data["file_max"] = int(ent_file_max.get())
                 m_data["seuil"] = int(ent_seuil.get())
+                try:
+                    new_larg = max(1, int(ent_larg.get()))
+                    new_haut = max(1, int(ent_haut.get()))
+                except ValueError:
+                    new_larg = m_data.get("largeur_cases", 1)
+                    new_haut = m_data.get("hauteur_cases", 1)
+                m_data["largeur_cases"] = new_larg
+                m_data["hauteur_cases"] = new_haut
                 m_data["protocoles"] = {p: catalog.get(p, {}) for p, v in self.check_vars.items() if v.get()}
                 m_data["tech_requis_poste"] = var_tech_poste.get()
                 try:
@@ -309,9 +649,15 @@ class TabConfig:
                 except ValueError:
                     pass
                 self.config_manager.sauvegarder()
+                # Redessiner avec les nouvelles dimensions
+                if self.selected_machine:
+                    self.canvas.delete(f"obj_{self.selected_machine}")
+                    mx = self.config_manager.data["machines"][self.selected_machine]["coords"]["x"]
+                    my = self.config_manager.data["machines"][self.selected_machine]["coords"]["y"]
+                    self.dessiner_bloc_machine(mx, my, self.selected_machine, type_m, new_larg, new_haut)
                 popup.destroy()
 
-            ttk.Button(popup, text="💾 SAUVER MACHINE", command=save, padding=10).pack(pady=10)
+            ttk.Button(frame_bas, text="💾 SAUVER MACHINE", command=save, padding=10).pack()
 
         # --- CAS 2 : L'ENTRÉE ---
         elif type_m == "ENTREE":
@@ -425,133 +771,39 @@ class TabConfig:
                     messagebox.showwarning("Erreur", "Valeurs numériques invalides.")
 
             frm_bas = ttk.Frame(popup)
-            frm_bas.pack(fill="x", padx=20, pady=(2, 15))
+            frm_bas.pack(side=tk.BOTTOM, fill="x", padx=20, pady=(2, 15))
             ttk.Button(frm_bas, text="💾 SAUVER L'ENTRÉE", command=save_entree).pack(pady=6)
 
-        # --- CAS 3 : TECH_OFFICE ---
+        # --- CAS 3 : TECH_OFFICE → rediriger vers la fenêtre RH ---
         elif type_m == "TECH_OFFICE":
-            ttk.Label(popup, text=f"Bureau : {self.selected_machine}", font=("Segoe UI", 11, "bold")).pack(pady=(15, 5))
+            popup.destroy()
+            FenetreRH(self.parent, self.config_manager,
+                      refresh_callback=self._refresh_plan_machines)
+            return
 
-            # ── Cadre principal ──────────────────────────────────────────────────
-            f_t = ttk.LabelFrame(popup, text="👤 Caractéristiques du technicien", padding=12)
-            f_t.pack(fill="x", padx=20, pady=10)
+        # --- placeholder inaccessible (évite les variables non définies) ---
+        if False:
+            pass
 
-            # Expérience
-            ttk.Label(f_t, text="Expérience (1 = novice  …  5 = expert) :").grid(
-                row=0, column=0, sticky="w", pady=3)
-            ent_exp = ttk.Entry(f_t, width=8)
-            ent_exp.insert(0, m_data.get("experience", 3))
-            ent_exp.grid(row=0, column=1, padx=5)
-            ttk.Label(f_t, text="Multiplie les erreurs : ×2.0 → ×0.4",
-                      foreground="gray").grid(row=0, column=2, padx=6)
+        # --- CAS 4 : REPOS ---
+        elif type_m == "REPOS":
+            ttk.Label(
+                popup,
+                text="🛌  Zone de repos",
+                font=("Segoe UI", 12, "bold"),
+            ).pack(pady=(20, 4))
+            ttk.Label(
+                popup,
+                text="Ce marqueur définit l'endroit où les techniciens\n"
+                     "se rendent pendant leur pause déjeuner.\n\n"
+                     "Déplacez-le sur le plan pour le repositionner.\n"
+                     "Les coordonnées sont sauvegardées automatiquement.",
+                justify="center",
+                wraplength=260,
+            ).pack(pady=10, padx=20)
+            ttk.Button(popup, text="Fermer", command=popup.destroy).pack(pady=8)
 
-            # Âge
-            ttk.Label(f_t, text="Âge (années) :").grid(row=1, column=0, sticky="w", pady=3)
-            ent_age = ttk.Entry(f_t, width=8)
-            ent_age.insert(0, m_data.get("age", 35))
-            ent_age.grid(row=1, column=1, padx=5)
-            ttk.Label(f_t, text="Jeune ↑ vitesse + ↑ erreurs  |  Senior ↓ vitesse + ↓ erreurs",
-                      foreground="gray").grid(row=1, column=2, padx=6)
-
-            # Taux d'erreur de base
-            ttk.Label(f_t, text="Taux d'erreur de base (0.0 – 1.0) :").grid(
-                row=2, column=0, sticky="w", pady=3)
-            ent_pct = ttk.Entry(f_t, width=8)
-            ent_pct.insert(0, m_data.get("pct_erreur_tech", 0.0))
-            ent_pct.grid(row=2, column=1, padx=5)
-            ttk.Label(f_t, text="Modulé par expérience · âge · fatigue · heure du jour",
-                      foreground="gray").grid(row=2, column=2, padx=6)
-
-            # Seuil de surcharge (affiché en %)
-            ttk.Label(f_t, text="Seuil de surcharge (0 – 100 %) :").grid(
-                row=3, column=0, sticky="w", pady=3)
-            ent_seuil = ttk.Entry(f_t, width=8)
-            ent_seuil.insert(0, int(float(m_data.get("seuil_charge_fatigue", 0.70)) * 100))
-            ent_seuil.grid(row=3, column=1, padx=5)
-            ttk.Label(f_t, text="Au-dessus de ce % de capacité, la fatigue commence à monter",
-                      foreground="gray").grid(row=3, column=2, padx=6)
-
-            # Taux de montée de fatigue
-            ttk.Label(f_t, text="Taux de montée de fatigue :").grid(
-                row=4, column=0, sticky="w", pady=3)
-            ent_taux = ttk.Entry(f_t, width=8)
-            ent_taux.insert(0, m_data.get("taux_montee_fatigue", 0.01))
-            ent_taux.grid(row=4, column=1, padx=5)
-            ttk.Label(f_t, text="Incrément par tube livré en surcharge (ex. 0.01)",
-                      foreground="gray").grid(row=4, column=2, padx=6)
-
-            # Capacité max tubes portés
-            ttk.Label(f_t, text="Capacité max (tubes portés simultanément) :").grid(
-                row=5, column=0, sticky="w", pady=3)
-            ent_cap = ttk.Entry(f_t, width=8)
-            ent_cap.insert(0, m_data.get("capacite_max_tubes", 10))
-            ent_cap.grid(row=5, column=1, padx=5)
-
-            # ── Aperçu indicatif ─────────────────────────────────────────────────
-            f_preview = ttk.LabelFrame(popup, text="🔍 Aperçu (expérience 3 · âge 35 · sans fatigue · 9h)",
-                                       padding=8)
-            f_preview.pack(fill="x", padx=20, pady=(0, 5))
-            lbl_preview = ttk.Label(f_preview, text="—", font=("Segoe UI", 9, "italic"))
-            lbl_preview.pack()
-
-            def _refresh_preview(*_):
-                try:
-                    _facteurs_exp = {1: 2.0, 2: 1.5, 3: 1.0, 4: 0.70, 5: 0.40}
-                    exp = max(1, min(5, int(ent_exp.get())))
-                    age = max(18, min(80, int(ent_age.get())))
-                    base = float(ent_pct.get())
-                    f_e = _facteurs_exp.get(exp, 1.0)
-                    f_a = (1.35 if age <= 28
-                           else 1.35 - (age - 28) / 12 * 0.35 if age <= 40
-                           else 1.0 - (age - 40) / 15 * 0.20 if age <= 55
-                           else max(0.60, 0.80 - (age - 55) / 10 * 0.20))
-                    pct_eff = min(1.0, base * f_e * f_a)
-                    # Vitesse age
-                    if age <= 28:
-                        vf = 1.10
-                    elif age <= 45:
-                        vf = 1.10 - (age - 28) / 17 * 0.15
-                    elif age <= 60:
-                        vf = 0.95 - (age - 45) / 15 * 0.15
-                    else:
-                        vf = max(0.70, 0.80 - (age - 60) / 10 * 0.10)
-                    v_eff = 8.0 * vf
-                    lbl_preview.config(
-                        text=f"Taux d'erreur effectif ≈ {pct_eff*100:.2f} %   |   "
-                             f"Vitesse ≈ {v_eff:.1f} px/tick   (à 9h, reposé)"
-                    )
-                except (ValueError, TypeError):
-                    lbl_preview.config(text="— valeurs invalides —")
-
-            ent_exp.bind("<KeyRelease>", _refresh_preview)
-            ent_age.bind("<KeyRelease>", _refresh_preview)
-            ent_pct.bind("<KeyRelease>", _refresh_preview)
-            _refresh_preview()
-
-            # ── Sauvegarde ───────────────────────────────────────────────────────
-            def save_tech():
-                try:
-                    exp = max(1, min(5, int(ent_exp.get())))
-                    age = max(18, min(80, int(ent_age.get())))
-                    pct = float(ent_pct.get())
-                    seuil = float(ent_seuil.get()) / 100.0
-                    taux = float(ent_taux.get())
-                    cap_max = max(1, int(ent_cap.get()))
-                    m_data["experience"] = exp
-                    m_data["age"] = age
-                    m_data["pct_erreur_tech"] = pct
-                    m_data["seuil_charge_fatigue"] = seuil
-                    m_data["taux_montee_fatigue"] = taux
-                    m_data["capacite_max_tubes"] = cap_max
-                    self.config_manager.sauvegarder()
-                    popup.destroy()
-                except ValueError:
-                    messagebox.showwarning("Erreur de saisie", "Valeurs numériques invalides.")
-
-            ttk.Button(popup, text="💾 SAUVER TECHNICIEN", command=save_tech,
-                       padding=10).pack(pady=12)
-
-        # --- CAS 4 : SORTIE ---
+        # --- CAS 5 : SORTIE et autres ---
         else:
             ttk.Label(popup, text="Zone de validation finale (Sortie)").pack(pady=20)
             ttk.Button(popup, text="Fermer", command=popup.destroy).pack()
@@ -590,10 +842,21 @@ class TabConfig:
             self.peindre_case(c, r)
             self.mode = old_mode
             
-        # 2. Les Machines
+        # 2. Les Machines (on ne dessine PAS les TECH_OFFICE sur le plan)
         machines = self.config_manager.get_machines()
         for nom, m in machines.items():
-            self.dessiner_bloc_machine(m["coords"]["x"], m["coords"]["y"], nom, m["type"])
+            if m.get("type") == "TECH_OFFICE":
+                continue
+            if not m.get("type") or not m.get("coords"):
+                continue
+            if m.get("en_attente_placement"):
+                continue  # sera dessiné dans la zone de dépôt
+            self.dessiner_bloc_machine(
+                m["coords"]["x"], m["coords"]["y"], nom, m["type"],
+                m.get("largeur_cases"), m.get("hauteur_cases"))
+
+        # 3. Machines en attente de placement (ajoutées par l'IA)
+        self._dessiner_zone_staging()
 
     def supprimer_selection(self):
         """Supprime la machine sélectionnée du JSON et du Canvas"""
@@ -619,11 +882,18 @@ class TabConfig:
         """Ouvre la fenêtre d'édition des procédures de tubes"""
         popup = tk.Toplevel(self.parent)
         popup.title("Éditeur de Procédures pour tubes")
-        popup.geometry("700x600")
+        popup.geometry("900x680")
+        popup.minsize(800, 600)
         popup.grab_set()
 
         ttk.Label(popup, text="🧪 Définissez les procédures pour chaque type de tube", 
                   font=("Segoe UI", 12, "bold")).pack(pady=10)
+
+        # --- BOUTONS DE SAUVEGARDE (ancrés en bas, toujours visibles) ---
+        frame_save = ttk.Frame(popup)
+        frame_save.pack(side=tk.BOTTOM, fill="x", pady=10, padx=10)
+        ttk.Button(frame_save, text="💾 SAUVER", command=lambda: self.sauver_workflow()).pack(side=tk.LEFT, padx=5)
+        ttk.Button(frame_save, text="Fermer", command=popup.destroy).pack(side=tk.LEFT, padx=5)
 
         # --- FRAME GAUCHE : liste des types ---
         frame_left = ttk.Frame(popup)
@@ -693,6 +963,13 @@ class TabConfig:
         ttk.Label(f_lot, text="(taille aléatoire U[min, max] à chaque arrivée)",
                   foreground="gray", font=("Arial", 8)).grid(row=2, column=2, padx=2)
 
+        ttk.Label(f_lot, text="Durée de validité (min, 0=illimitée) :",
+                  font=("Arial", 9)).grid(row=3, column=0, sticky="w", pady=2)
+        self.ent_validite = ttk.Entry(f_lot, width=7)
+        self.ent_validite.grid(row=3, column=1, padx=4)
+        ttk.Label(f_lot, text="(ex: 240 = 4 h max avant péremption)",
+                  foreground="gray", font=("Arial", 8)).grid(row=3, column=2, padx=2)
+
         ttk.Label(frame_right, text="Étapes du workflow :", font=("Arial", 9, "bold")).pack(anchor="w", pady=(15, 5))
         
         # Listbox pour les étapes
@@ -707,12 +984,6 @@ class TabConfig:
 
         # Binding pour mettre à jour la couleur en direct
         self.ent_couleur.bind("<KeyRelease>", lambda e: self.update_color_preview())
-
-        # --- BOUTONS DE SAUVEGARDE ---
-        frame_save = ttk.Frame(popup)
-        frame_save.pack(fill="x", pady=10)
-        ttk.Button(frame_save, text="💾 SAUVER", command=lambda: self.sauver_workflow()).pack(side=tk.LEFT, padx=5)
-        ttk.Button(frame_save, text="Fermer", command=popup.destroy).pack(side=tk.LEFT, padx=5)
 
         # Charger la liste des types
         self.actualiser_liste_types()
@@ -753,6 +1024,9 @@ class TabConfig:
 
         self.ent_lot_max.delete(0, tk.END)
         self.ent_lot_max.insert(0, str(workflow.get("taille_lot_max", 1)))
+
+        self.ent_validite.delete(0, tk.END)
+        self.ent_validite.insert(0, str(workflow.get("duree_validite_min", 0)))
 
         # Remplir les étapes
         self.listbox_etapes.delete(0, tk.END)
@@ -858,14 +1132,95 @@ class TabConfig:
             pct_urgent = float(self.ent_pct_urgent.get())
             lot_min    = max(1, int(self.ent_lot_min.get()))
             lot_max    = max(lot_min, int(self.ent_lot_max.get()))
+            validite   = max(0, int(self.ent_validite.get()))
         except ValueError:
-            messagebox.showwarning("Erreur", "Valeurs numériques invalides (lot / urgence).")
+            messagebox.showwarning("Erreur", "Valeurs numériques invalides (lot / urgence / validité).")
             return
 
         self.config_manager.ajouter_type_tube(
             nom_type, couleur, etapes,
             pct_urgent=pct_urgent,
             taille_lot_min=lot_min,
-            taille_lot_max=lot_max
+            taille_lot_max=lot_max,
+            duree_validite_min=validite,
         )
         messagebox.showinfo("Succès", f"Procédure '{nom_type}' sauvegardée !")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    #  Zone de dépôt — machines ajoutées par l'IA en attente de placement
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _dessiner_zone_staging(self):
+        """Dessine le bandeau des machines en attente de placement (ajoutées par l'IA)."""
+        self.canvas.delete("staging")
+
+        en_attente = {
+            k: v for k, v in self.config_manager.data.get("machines", {}).items()
+            if isinstance(v, dict) and v.get("en_attente_placement")
+            and v.get("type") not in ("TECH_OFFICE", "ENTREE", "SORTIE", "REPOS")
+        }
+        if not en_attente:
+            return
+
+        # Bandeau violet en haut à gauche du canvas (coords canvas fixes)
+        MARGE = 10
+        LARG_CASE = self.grid_size
+        HAUT_CASE = self.grid_size
+        COLS = 6
+        PAD = 8
+
+        nb = len(en_attente)
+        nb_lignes = max(1, -(-nb // COLS))  # ceil division
+        bande_h = nb_lignes * (HAUT_CASE + PAD) + 50
+        bande_w = COLS * (LARG_CASE + PAD) + 20
+
+        # Fond du bandeau
+        self.canvas.create_rectangle(
+            MARGE, MARGE, MARGE + bande_w, MARGE + bande_h,
+            fill="#2d1b69", outline="#a78bfa", width=2,
+            tags="staging"
+        )
+        self.canvas.create_text(
+            MARGE + bande_w // 2, MARGE + 12,
+            text="📦  Machines à placer — glissez-les sur le plan",
+            fill="#e9d5ff", font=("Segoe UI", 9, "bold"),
+            tags="staging"
+        )
+
+        for i, (nom, m) in enumerate(en_attente.items()):
+            col_i = i % COLS
+            row_i = i // COLS
+            cx = MARGE + 10 + col_i * (LARG_CASE + PAD) + LARG_CASE // 2
+            cy = MARGE + 30 + row_i * (HAUT_CASE + PAD) + HAUT_CASE // 2
+
+            # Mettre à jour les coords dans le JSON pour que le drag fonctionne
+            if "coords" not in m or m.get("en_attente_placement"):
+                m["coords"] = {"x": cx, "y": cy}
+
+            tag_obj = f"obj_{nom}"
+            self.canvas.create_rectangle(
+                cx - LARG_CASE // 2, cy - HAUT_CASE // 2,
+                cx + LARG_CASE // 2, cy + HAUT_CASE // 2,
+                fill="#7c3aed", outline="#c4b5fd", width=2,
+                tags=("machine", "staging", tag_obj)
+            )
+            max_chars = 7
+            self.canvas.create_text(
+                cx, cy, text=nom[:max_chars],
+                fill="white", font=("Arial", 7, "bold"),
+                tags=("machine", "staging", tag_obj)
+            )
+
+    def _refresh_plan_machines(self):
+        """Redessine uniquement les sprites machines (après ajout/suppression tech)."""
+        self.canvas.delete("machine")
+        machines = self.config_manager.get_machines()
+        for nom, m in machines.items():
+            if m["type"] == "TECH_OFFICE":
+                continue
+            if m.get("en_attente_placement"):
+                continue  # sera dessiné par _dessiner_zone_staging
+            self.dessiner_bloc_machine(
+                m["coords"]["x"], m["coords"]["y"], nom, m["type"],
+                m.get("largeur_cases"), m.get("hauteur_cases"))
+        self._dessiner_zone_staging()

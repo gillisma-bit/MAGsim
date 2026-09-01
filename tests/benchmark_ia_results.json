@@ -1,0 +1,33 @@
+{
+  "parametres": {
+    "duree_7j_min": 10080,
+    "n_runs": 2
+  },
+  "sans_ia": [
+    {
+      "seed": 42,
+      "tubes_sortis": 1396,
+      "tubes_degrades": 158,
+      "tubes_perimes": 0,
+      "tat_n": 1396,
+      "tat_mean": 240.93,
+      "tat_p95": 430.84,
+      "tat_max": 626.59,
+      "stress_critique": 546,
+      "appels_ia": 0
+    },
+    {
+      "seed": 59,
+      "tubes_sortis": 1211,
+      "tubes_degrades": 197,
+      "tubes_perimes": 0,
+      "tat_n": 1211,
+      "tat_mean": 286.7,
+      "tat_p95": 393.7,
+      "tat_max": 4173.09,
+      "stress_critique": 565,
+      "appels_ia": 0
+    }
+  ],
+  "avec_ia": []
+}

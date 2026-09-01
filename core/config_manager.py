@@ -1,6 +1,7 @@
 import json
 import os
 
+
 class ConfigManager:
     def __init__(self, filepath="data/config_mag.json"):
         self.filepath = filepath
@@ -26,7 +27,7 @@ class ConfigManager:
             "machines": {},
             "sol": {},
             "catalog_protocoles": {},
-            "types_tubes": {}
+            "types_tubes": {},
         }
 
     def sauvegarder(self):
@@ -53,7 +54,21 @@ class ConfigManager:
             self.sauvegarder()
 
     def get_machines(self):
-        return self.data.get("machines", {})
+        """Retourne les machines valides (avec clé 'type' et 'coords').
+        Exclut les machines en attente de placement (zone tampon IA).
+        Normalise aussi 'protocoles' en dict si c'est une liste (données corrompues).
+        """
+        result = {}
+        for k, v in self.data.get("machines", {}).items():
+            if not isinstance(v, dict) or "type" not in v or "coords" not in v:
+                continue
+            if v.get("en_attente_placement"):
+                continue  # machine ajoutée par l'IA mais pas encore placée sur le plan
+            if isinstance(v.get("protocoles"), list):
+                v = dict(v)
+                v["protocoles"] = {}
+            result[k] = v
+        return result
 
     # --- GESTION DU CATALOGUE DE PROTOCOLES (NOUVEAU) ---
     def ajouter_protocole_global(self, nom, temps, type_compatible):
@@ -98,17 +113,19 @@ class ConfigManager:
 
     # --- GESTION DES TYPES DE TUBES (Procédures) ---
     def ajouter_type_tube(self, nom, couleur, workflow,
-                          pct_urgent=0.0, taille_lot_min=1, taille_lot_max=1):
+                          pct_urgent=0.0, taille_lot_min=1, taille_lot_max=1,
+                          duree_validite_min=0):
         """Ajoute/modifie un type de tube avec sa procédure."""
         if "types_tubes" not in self.data:
             self.data["types_tubes"] = {}
         existant = self.data["types_tubes"].get(nom, {})
         existant.update({
-            "couleur":        couleur,
-            "workflow":       workflow,
-            "pct_urgent":     pct_urgent,
-            "taille_lot_min": taille_lot_min,
-            "taille_lot_max": taille_lot_max,
+            "couleur":            couleur,
+            "workflow":           workflow,
+            "pct_urgent":         pct_urgent,
+            "taille_lot_min":     taille_lot_min,
+            "taille_lot_max":     taille_lot_max,
+            "duree_validite_min": duree_validite_min,
         })
         # Nettoyer l'ancien champ priorite s'il subsiste
         existant.pop("priorite", None)
@@ -128,3 +145,102 @@ class ConfigManager:
     def get_type_tube(self, nom):
         """Retourne les infos d'un type de tube spécifique."""
         return self.data.get("types_tubes", {}).get(nom, None)
+
+    def extraire_consommables_json(self) -> dict:
+        """Retourne les consommables encore présents dans le JSON (migration unique)."""
+        return self.data.pop("consommables", {})
+
+    # ── GESTION DES FOURNISSEURS (blocs sources externes) ─────────────────
+    def get_fournisseurs(self) -> dict:
+        """Charge et retourne tous les fournisseurs depuis data/fournisseurs/.
+
+        Les fournisseurs sont triés par nom de fichier pour un ordre stable.
+        Retourne un dict {id: config_dict}.
+        """
+        dossier = os.path.join(os.path.dirname(self.filepath), "fournisseurs")
+        if not os.path.isdir(dossier):
+            return {}
+        result = {}
+        for fname in sorted(os.listdir(dossier)):
+            if not fname.endswith(".json"):
+                continue
+            path = os.path.join(dossier, fname)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    fconf = json.load(f)
+                fid = fconf.get("id", fname[:-5])
+                result[fid] = fconf
+            except Exception as e:
+                print(f"[CONFIG] Erreur lecture fournisseur {fname}: {e}")
+        return result
+
+    def sauvegarder_fournisseur(self, fournisseur: dict):
+        """Sauvegarde un fournisseur dans son fichier JSON dédié."""
+        dossier = os.path.join(os.path.dirname(self.filepath), "fournisseurs")
+        os.makedirs(dossier, exist_ok=True)
+        fid  = fournisseur.get("id", "inconnu")
+        path = os.path.join(dossier, f"{fid}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(fournisseur, f, indent=4, ensure_ascii=False)
+
+    # ── GESTION DES NAVETTES ──────────────────────────────────────────────
+    def get_navettes(self) -> dict:
+        """Charge et retourne toutes les navettes depuis data/navettes/."""
+        dossier = os.path.join(os.path.dirname(self.filepath), "navettes")
+        if not os.path.isdir(dossier):
+            return {}
+        result = {}
+        for fname in sorted(os.listdir(dossier)):
+            if not fname.endswith(".json"):
+                continue
+            path = os.path.join(dossier, fname)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    nconf = json.load(f)
+                nid = nconf.get("id", fname[:-5])
+                result[nid] = nconf
+            except Exception as e:
+                print(f"[CONFIG] Erreur lecture navette {fname}: {e}")
+        return result
+
+    def get_navette_principale(self) -> dict:
+        """Retourne la première navette disponible, ou une config par défaut."""
+        navettes = self.get_navettes()
+        if navettes:
+            return next(iter(navettes.values()))
+        return {
+            "id": "defaut", "nom": "Navette (défaut)",
+            "capacite_max": 20, "mode_depart": "hybride",
+            "frequence_depart_min": 30, "priorite_urgents": True,
+            "pixels_par_minute": 40,
+            "position_labo_canvas": {"x": 710, "y": 390},
+        }
+
+    def sauvegarder_navette(self, navette: dict):
+        """Sauvegarde une navette dans son fichier JSON dédié."""
+        dossier = os.path.join(os.path.dirname(self.filepath), "navettes")
+        os.makedirs(dossier, exist_ok=True)
+        nid  = navette.get("id", "navette")
+        path = os.path.join(dossier, f"{nid}.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(navette, f, indent=4, ensure_ascii=False)
+
+    # ── GESTION DES ZONES ────────────────────────────────────────────────
+    def get_zones(self) -> list:
+        """Charge et retourne les zones depuis data/zones.json."""
+        path = os.path.join(os.path.dirname(self.filepath), "zones.json")
+        if not os.path.exists(path):
+            return []
+        try:
+            with open(path, encoding="utf-8") as f:
+                data = json.load(f)
+            return data.get("zones", [])
+        except Exception as e:
+            print(f"[CONFIG] Erreur lecture zones.json: {e}")
+            return []
+
+    def sauvegarder_zones(self, zones: list):
+        """Sauvegarde la liste des zones dans data/zones.json."""
+        path = os.path.join(os.path.dirname(self.filepath), "zones.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"zones": zones}, f, indent=4, ensure_ascii=False)
