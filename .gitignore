@@ -36,3 +36,8 @@ data/config_api.json
 *.db
 *.db-shm
 *.db-wal
+
+# Couverture de tests (générée par la CI, jamais committée)
+.coverage
+coverage.xml
+htmlcov/

@@ -1,0 +1,54 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller simpy matplotlib
+
+      # macOS : --onefile + --windowed est déprécié par PyInstaller pour les
+      # bundles .app (deviendra une erreur en v7) — testé localement le
+      # 1er sept. 2026, confirmé au build. --onedir est le mode recommandé ;
+      # le .app produit est ensuite zippé pour préserver ses permissions.
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: pyinstaller --onefile --windowed --name MAGsim main.py
+
+      - name: Build (macOS)
+        if: runner.os == 'macOS'
+        run: pyinstaller --onedir --windowed --name MAGsim main.py
+
+      - name: Empaqueter le bundle macOS (.app -> .zip)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          zip -qr MAGsim-macOS.zip MAGsim.app
+
+      - name: Publier la release (Windows)
+        if: runner.os == 'Windows'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MAGsim.exe
+
+      - name: Publier la release (macOS)
+        if: runner.os == 'macOS'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/MAGsim-macOS.zip
